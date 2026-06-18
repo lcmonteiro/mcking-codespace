@@ -7,23 +7,18 @@ Abrir `index.html` no browser ou servir com `python -m http.server`.
 - `*.drawio` — ficheiros editáveis no [diagrams.net](https://app.diagrams.net/)
 - `*.drawio.svg` — versão SVG gerada a partir do drawio (abre em qualquer browser)
 
-### 📎 Ver diagrama no browser (sem instalar nada)
+### 📎 Ver diagramas
 
-Basta um link para o **diagrams.net viewer**:
+**Opção 1 — GitHub (recomendado):** O GitHub renderiza `.drawio` nativamente.
+Basta clicar no ficheiro no repo:
 
-```markdown
-[📐 Ver diagrama](https://viewer.diagrams.net/?url=https://raw.githubusercontent.com/lcmonteiro/mcking-codespace/main/web/mcking-codespace.drawio)
-```
+https://github.com/lcmonteiro/mcking-codespace/blob/main/web/mcking-codespace.drawio
 
-Fica assim:
+**Opção 2 — Local:** abre `web/diagramas.html` no browser.
 
-[📐 Ver diagrama](https://viewer.diagrams.net/?url=https://raw.githubusercontent.com/lcmonteiro/mcking-codespace/main/web/mcking-codespace.drawio)
+**Opção 3 — Editar:** https://app.diagrams.net/ → File → Open → GitHub
 
-Funciona com qualquer `.drawio` no repo — só mudar o URL. O viewer carrega **todos os tabs** do ficheiro.
-
-### Tabs no HTML (alternativa)
-
-Ver `diagramas.html` — carrega SVGs com tabs nativos, sem servidor.
+**Nota:** `viewer.diagrams.net` com `raw.githubusercontent.com` não funciona em repos privados.
 
 ### Converter drawio → SVG
 

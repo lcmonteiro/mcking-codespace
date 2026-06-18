@@ -41,9 +41,13 @@ python -m http.server 8080
 
 ## 📐 Diagramas
 
-[📐 Ver diagrama do repo](https://viewer.diagrams.net/?url=https://raw.githubusercontent.com/lcmonteiro/mcking-codespace/main/web/mcking-codespace.drawio)
+**GitHub já renderiza .drawio** — vê o ficheiro diretamente no repo:
 
-Ou abrir `web/diagramas.html` para tabs nativos.
+https://github.com/lcmonteiro/mcking-codespace/blob/main/web/mcking-codespace.drawio
+
+**Localmente:** abre `web/diagramas.html` no browser (tabs com SVGs).
+
+**Para editar:** abre o `.drawio` em https://app.diagrams.net/ (File → Open → GitHub) ou localmente com drawio desktop.
 
 ---
 
