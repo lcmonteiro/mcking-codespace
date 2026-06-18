@@ -1,0 +1,66 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/24.7.5 Chrome/128.0.6613.36 Electron/32.0.1 Safari/537.36" version="24.7.5">
+  <diagram name="Mcking Codespace" id="mcking-codespace">
+    <mxGraphModel dx="1016" dy="602" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <!-- Title -->
+        <mxCell id="title" value="&lt;b&gt;Mcking Codespace&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=24;fontColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="320" y="20" width="260" height="40" as="geometry"/>
+        </mxCell>
+        <!-- Root box -->
+        <mxCell id="root" value="mcking-codespace/" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=14;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="100" y="80" width="700" height="490" as="geometry"/>
+        </mxCell>
+        <!-- cpp/ -->
+        <mxCell id="cpp" value="&lt;b&gt;cpp/&lt;/b&gt;  C++23&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;gpt.cpp, input.txt, Makefile&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="130" y="120" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <!-- python/ -->
+        <mxCell id="py" value="&lt;b&gt;python/&lt;/b&gt;  🐍&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;scripts utilitários&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="350" y="120" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <!-- web/ -->
+        <mxCell id="web" value="&lt;b&gt;web/&lt;/b&gt;  🌐&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;HTML/JS/CSS, diagramas&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="570" y="120" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <!-- scripts/ -->
+        <mxCell id="scripts" value="&lt;b&gt;scripts/&lt;/b&gt;  ⚙️&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;build.ps1, sync-github.js&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="130" y="230" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <!-- README + git -->
+        <mxCell id="readme" value="&lt;b&gt;README.md&lt;/b&gt; + &lt;b&gt;.gitignore&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;documentação &amp;amp; git config&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="350" y="230" width="420" height="80" as="geometry"/>
+        </mxCell>
+        <!-- Arrow: CPP -> Build -->
+        <mxCell id="arrow-build" value="compila com" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=10;startArrow=classic;startFill=1;endArrow=none;endFill=0;" edge="1" parent="1" source="cpp" target="scripts">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- Arrow: Scripts -> Web -->
+        <mxCell id="arrow-serve" value="serve" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=10;startArrow=classic;startFill=1;endArrow=none;endFill=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="scripts" target="py">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- Build output -->
+        <mxCell id="build-out" value="&lt;b&gt;Build Output&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;gpt.exe, etc. (gitignored)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="130" y="350" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <!-- GitHub -->
+        <mxCell id="github" value="&lt;b&gt;GitHub&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;github.com/lcmonteiro/mcking-codespace&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#333333;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="350" y="350" width="420" height="60" as="geometry"/>
+        </mxCell>
+        <!-- Arrow: repo -> github -->
+        <mxCell id="arrow-push" value="git push" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=10;startArrow=classic;startFill=1;endArrow=block;endFill=0;" edge="1" parent="1" source="root" target="github">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- GPT flow box -->
+        <mxCell id="gpt-flow" value="&lt;b&gt;🧠 GPT from scratch (C++23)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot;&gt;Transformer + Autograd + Adam&lt;br&gt;Treina em names.txt e gera nomes&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontColor=#333333;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="130" y="440" width="640" height="70" as="geometry"/>
+        </mxCell>
+        <!-- Subtitle -->
+        <mxCell id="subtitle" value="Gerido por &lt;b&gt;Mcking&lt;/b&gt; 🤖" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=12;fontColor=#999999;" vertex="1" parent="1">
+          <mxGeometry x="320" y="540" width="260" height="20" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
