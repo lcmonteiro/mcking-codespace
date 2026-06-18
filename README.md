@@ -39,6 +39,12 @@ Abrir `web/index.html` no browser ou servir com:
 python -m http.server 8080
 ```
 
+## 📐 Diagramas
+
+[📐 Ver diagrama do repo](https://viewer.diagrams.net/?url=https://raw.githubusercontent.com/lcmonteiro/mcking-codespace/main/web/mcking-codespace.drawio)
+
+Ou abrir `web/diagramas.html` para tabs nativos.
+
 ---
 
 _Repo gerido automaticamente pelo Mcking._
