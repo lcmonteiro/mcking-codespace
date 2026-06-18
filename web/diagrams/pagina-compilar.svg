@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="100%" height="100%">
+  <defs>
+    <style>
+      .title { font: bold 22px 'Segoe UI', Arial, sans-serif; fill: #333; text-anchor: middle; }
+      .head { font: bold 16px 'Segoe UI', Arial, sans-serif; fill: #333; text-anchor: middle; }
+      .text { font: 12px 'Segoe UI', Arial, sans-serif; fill: #555; }
+      .em { font: 12px 'Segoe UI', Arial, sans-serif; fill: #2a5db0; }
+    </style>
+  </defs>
+  <rect width="800" height="500" fill="#f5f5f5" rx="8"/>
+  <text x="400" y="45" class="title">Processo: C++</text>
+  <text x="400" y="80" class="head">Compilar C++ no Windows</text>
+  <text x="400" y="110" class="text">.\scripts\build.ps1 cpp\programa.cpp [-run] [-msvc]</text>
+  <!-- Auto-detect flow -->
+  <rect x="250" y="140" width="300" height="40" rx="6" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="400" y="165" class="text" text-anchor="middle">1. Auto-detecta compilador</text>
+  <polygon points="400,180 390,195 410,195" fill="#6c8ebf"/>
+  <rect x="100" y="195" width="150" height="40" rx="6" fill="#e1d5e7" stroke="#9673a6"/>
+  <text x="175" y="220" class="text" text-anchor="middle">GCC (MSYS2)</text>
+  <rect x="325" y="195" width="150" height="40" rx="6" fill="#ffe6cc" stroke="#d79b00"/>
+  <text x="400" y="220" class="text" text-anchor="middle">Clang (MSYS2)</text>
+  <rect x="550" y="195" width="150" height="40" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+  <text x="625" y="220" class="text" text-anchor="middle">MSVC (VS)</text>
+  <polygon points="400,235 390,250 410,250" fill="#666"/>
+  <rect x="250" y="250" width="300" height="40" rx="6" fill="#f8cecc" stroke="#b85450"/>
+  <text x="400" y="275" class="text" text-anchor="middle">2. Compila com -std=c++23 -O2</text>
+  <polygon points="400,290 390,305 410,305" fill="#666"/>
+  <rect x="250" y="305" width="300" height="40" rx="6" fill="#d5e8d4" stroke="#82b366"/>
+  <text x="400" y="330" class="text" text-anchor="middle">3. ✅ programa.exe</text>
+  <text x="400" y="400" class="text">Exemplo: .\scripts\build.ps1 .\cpp\gpt.cpp -run</text>
+  <text x="400" y="420" class="em">Compila e corre logo! Não precisas de Makefile/CMake.</text>
+</svg>
