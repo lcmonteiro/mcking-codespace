@@ -1,9 +1,13 @@
-// 🔧 GPT from scratch — pure C++23, no deps, no bloat.
-// The complete algorithm: autograd → transformer → training → inference.
-// Everything else is just efficiency.
-//
-// Style: AAA, trailing returns, std::ranges, Number concept.
-// ====================================================================
+/// @file    gpt.cpp
+/// @brief   Pure C++23 GPT: autograd → transformer → training → inference.
+///          Zero dependencies beyond the standard library.
+/// @details The entire learning algorithm in a single translation unit:
+///          reverse-mode autograd on scalar computation graphs, a small
+///          decoder-only transformer with multi-head self-attention, Adam
+///          optimisation, character-level tokenisation, and ancestral
+///          sampling at inference time.
+/// @style   AAA, trailing return types, `std::ranges`, concept-constrained
+///          templates, CamelCase for template classes.
 
 #include <algorithm>
 #include <cmath>
@@ -22,92 +26,140 @@
 #include <unordered_set>
 #include <vector>
 
-// ── Number concept ──────────────────────────────────────────────────
+// ============================================================================
+// 1. Numeric concept
+// ============================================================================
+
+/// \brief Constrains a type to behave as a scalar real number.
+/// \tparam T  Candidate type – must be floating-point or integral.
 template<typename T>
 concept Number = std::floating_point<T> || std::integral<T>;
 
-// ── Autograd node ───────────────────────────────────────────────────
-// Typed scalar in the computation graph. Each node tracks its children
-// and local gradients for reverse-mode automatic differentiation.
-template<Number N>
+// ============================================================================
+// 2. Autograd
+// ============================================================================
+
+/// \brief Node in the scalar computation graph.
+/// \tparam ScalarT  Underlying numeric scalar type (must satisfy `Number`).
+///
+/// Each node stores its \p data and accumulated \p grad, plus the children
+/// and local gradients needed for reverse-mode automatic differentiation.
+template<Number ScalarT>
 struct ValueNode {
-  using Scalar   = N;
-  using NodePtr  = std::shared_ptr<ValueNode<N>>;
-  using Children = std::vector<NodePtr>;
-  using Gradients = std::vector<N>;
+  using Scalar    = ScalarT;                       ///< Exposed scalar alias.
+  using NodePtr   = std::shared_ptr<ValueNode>;    ///< Heap-allocated node.
+  using Children  = std::vector<NodePtr>;           ///< Dependency list.
+  using Gradients = std::vector<Scalar>;            ///< Local gradient buffer.
 
-  Scalar   data;
-  Scalar   grad = N{0};
-  Children children     = {};
-  Gradients local_grads = {};
+  Scalar   data;                                    ///< Forward value.
+  Scalar   grad = Scalar{0};                        ///< Accumulated gradient.
+  Children children     = {};                       ///< Operands in the graph.
+  Gradients local_grads = {};                       ///< d(this) / d(child).
 
+  /// Leaf value constructor.
   explicit ValueNode(Scalar d) : data(d) {}
+
+  /// Internal node: value + children + local gradients.
   ValueNode(Scalar d, Children ch, Gradients lg)
     : data(d), children(std::move(ch)), local_grads(std::move(lg)) {}
 };
 
-// ── Value wrapper — operator overloads build the graph ──────────────
-template<Number N>
+/// \brief User-facing wrapper that builds the graph via operator overloads.
+/// \tparam ScalarT  Underlying numeric scalar type.
+///
+/// Arithmetic operators (`+`, `*`, `-`, `/`, `pow`, `log`, `exp`, `relu`)
+/// produce new `Value` nodes wired into the computation graph.  Call
+/// `backward()` to run reverse-mode automatic differentiation.
+template<Number ScalarT>
 class Value {
 public:
-  using Scalar  = N;
-  using Node    = ValueNode<N>;
-  using NodePtr = std::shared_ptr<Node>;
+  using Scalar   = ScalarT;
+  using Node     = ValueNode<Scalar>;
+  using NodePtr  = std::shared_ptr<Node>;
 
-  NodePtr node;
+  NodePtr node;                                     ///< Owning reference.
 
-  Value(Scalar d = N{0}) : node(std::make_shared<Node>(d)) {}
-  Value(NodePtr n) : node(std::move(n)) {}
+  /// Construct a leaf value.
+  explicit Value(Scalar d = Scalar{0})
+    : node(std::make_shared<Node>(d)) {}
 
-  auto data()     const -> Scalar { return node->data; }
-  auto grad()     const -> Scalar { return node->grad; }
-  auto set_data(Scalar d)   -> void { node->data = d; }
-  auto zero_grad()          -> void { node->grad = N{0}; }
+  /// Wrap an existing node (used internally by arithmetic).
+  explicit Value(NodePtr n) : node(std::move(n)) {}
 
-  auto operator+(const Value& o) const -> Value {
+  /// @name Data access
+  ///@{
+  [[nodiscard]] auto data()     const -> Scalar { return node->data; }
+  [[nodiscard]] auto grad()     const -> Scalar { return node->grad; }
+  auto set_data(Scalar d)             -> void  { node->data = d; }
+  auto zero_grad()                    -> void  { node->grad = Scalar{0}; }
+  ///@}
+
+  // ── Arithmetic operators ─────────────────────────────────────────────
+
+  /// \brief Element-wise addition.
+  [[nodiscard]] auto operator+(const Value& o) const -> Value {
     return Value(std::make_shared<Node>(
       node->data + o.node->data,
       typename Node::Children{node, o.node},
-      typename Node::Gradients{N{1}, N{1}}));
+      typename Node::Gradients{Scalar{1}, Scalar{1}}));
   }
-  auto operator*(const Value& o) const -> Value {
+
+  /// \brief Element-wise multiplication.
+  [[nodiscard]] auto operator*(const Value& o) const -> Value {
     return Value(std::make_shared<Node>(
       node->data * o.node->data,
       typename Node::Children{node, o.node},
       typename Node::Gradients{o.node->data, node->data}));
   }
-  auto pow(Scalar p) const -> Value {
+
+  /// \brief Power: `this ** p`.
+  [[nodiscard]] auto pow(Scalar p) const -> Value {
     auto out = std::pow(node->data, p);
     return Value(std::make_shared<Node>(
       out,
       typename Node::Children{node},
-      typename Node::Gradients{p * std::pow(node->data, p - N{1})}));
+      typename Node::Gradients{
+        p * std::pow(node->data, p - Scalar{1})}));
   }
-  auto log() const -> Value {
+
+  /// \brief Natural logarithm.
+  [[nodiscard]] auto log() const -> Value {
     return Value(std::make_shared<Node>(
       std::log(node->data),
       typename Node::Children{node},
-      typename Node::Gradients{N{1} / node->data}));
+      typename Node::Gradients{Scalar{1} / node->data}));
   }
-  auto exp() const -> Value {
+
+  /// \brief Exponential function.
+  [[nodiscard]] auto exp() const -> Value {
     auto e = std::exp(node->data);
     return Value(std::make_shared<Node>(
       e,
       typename Node::Children{node},
       typename Node::Gradients{e}));
   }
-  auto relu() const -> Value {
-    auto out = std::max(N{0}, node->data);
+
+  /// \brief Rectified linear unit.
+  [[nodiscard]] auto relu() const -> Value {
+    auto out = std::max(Scalar{0}, node->data);
     return Value(std::make_shared<Node>(
       out,
       typename Node::Children{node},
-      typename Node::Gradients{node->data > N{0} ? N{1} : N{0}}));
+      typename Node::Gradients{
+        node->data > Scalar{0} ? Scalar{1} : Scalar{0}}));
   }
-  auto operator-()  const -> Value { return *this * Value(N{-1}); }
-  auto operator-(const Value& o) const -> Value { return *this + (-o); }
-  auto operator/(const Value& o) const -> Value { return *this * o.pow(N{-1}); }
 
-  // Reverse-mode autograd: topological sort → chain rule
+  [[nodiscard]] auto operator-()  const -> Value { return *this * Value(Scalar{-1}); }
+  [[nodiscard]] auto operator-(const Value& o) const -> Value { return *this + (-o); }
+  [[nodiscard]] auto operator/(const Value& o) const -> Value { return *this * o.pow(Scalar{-1}); }
+
+  // ── Backpropagation ──────────────────────────────────────────────────
+
+  /// \brief Run reverse-mode automatic differentiation.
+  ///
+  /// Performs a topological sort of the computation graph starting at this
+  /// node, then applies the chain rule in reverse order to accumulate
+  /// gradients into every ancestor node.
   auto backward() -> void {
     auto topo    = std::vector<NodePtr>{};
     auto visited = std::unordered_set<Node*>{};
@@ -121,84 +173,129 @@ public:
     };
     build(node);
 
-    node->grad = N{1};
+    node->grad = Scalar{1};
     for (const auto& v : topo | std::views::reverse)
       for (auto i : std::views::iota(0u, v->children.size()))
         v->children[i]->grad += v->local_grads[i] * v->grad;
   }
 };
 
-// ── Types ───────────────────────────────────────────────────────────
-using Scalar   = double;
-using Val      = Value<Scalar>;
-using Vector   = std::vector<Val>;
-using Matrix   = std::vector<Vector>;
-using Weights  = std::vector<Scalar>;       // raw float buffers
-using Tokens   = std::vector<int>;
-using Chars    = std::vector<char>;
-using KVCache  = std::vector<std::vector<Vector>>; // [layer][time]→embedding
+// ============================================================================
+// 3. Concrete type aliases
+// ============================================================================
+
+using Scalar   = double;                           ///< Default numeric type.
+using Val      = Value<Scalar>;                    ///< Autograd value.
+using Vector   = std::vector<Val>;                 ///< Autograd vector.
+using Matrix   = std::vector<Vector>;              ///< Weight matrix.
+using Weights  = std::vector<Scalar>;              ///< Raw float buffer.
+using Tokens   = std::vector<int>;                 ///< Token sequence.
+using Chars    = std::vector<char>;                ///< Character vocabulary.
+using KVCache  = std::vector<std::vector<Vector>>; ///< [layer][time]→embedding.
 using Dict     = std::unordered_map<std::string, Matrix>;
 
-auto vsum(const Vector& xs) -> Val {
-  return std::accumulate(xs.begin(), xs.end(), Val(Scalar{0}),
-    [](auto acc, const auto& x) { return acc + x; });
+// ============================================================================
+// 4. Generic vector utilities
+// ============================================================================
+
+/// \brief Sum all elements of a vector using range-based fold.
+/// \param xs  Input vector of autograd values.
+/// \return    A single `Val` equal to the element-wise sum.
+[[nodiscard]] auto vsum(const Vector& xs) -> Val {
+  return std::ranges::fold_left(xs, Val{}, std::plus<>{});
 }
 
-// ── Model ops: linear, softmax, rmsnorm ─────────────────────────────
-auto linear(const Vector& x, const Matrix& w) -> Vector {
+// ============================================================================
+// 5. Model operations
+// ============================================================================
+
+/// \brief Linear (fully-connected) layer: `x @ W^T`.
+/// \param x  Input vector of size `nin`.
+/// \param w  Weight matrix of shape `(nout, nin)`.
+/// \return   Output vector of size `nout`.
+[[nodiscard]] auto linear(const Vector& x, const Matrix& w) -> Vector {
   auto out = Vector{}; out.reserve(w.size());
-  for (const auto& row : w) {
-    auto s = std::inner_product(row.begin(), row.end(), x.begin(),
-      Val(Scalar{0}),
-      [](auto a, auto b) { return a + b; },
-      [](auto wi, auto xi) { return wi * xi; });
-    out.push_back(s);
-  }
+
+  /// Compute a single row of the output: dot product of \p x with one row.
+  auto dot_row = [&x](const Vector& row) -> Val {
+    return std::ranges::fold_left(
+      std::views::zip(row, x) | std::views::transform(
+        [](const auto& p) -> Val {
+          const auto& [a, b] = p;
+          return a * b;
+        }),
+      Val{}, std::plus<>{});
+  };
+
+  std::ranges::transform(w, std::back_inserter(out), dot_row);
   return out;
 }
 
-auto softmax(const Vector& logits) -> Vector {
-  auto max_val = std::ranges::max(logits | std::views::transform(&Val::data));
+/// \brief Softmax normalisation: `exp(x_i - max) / sum(exp(...))`.
+/// \param logits  Raw score vector.
+/// \return        Probability distribution (same size, sums to 1).
+[[nodiscard]] auto softmax(const Vector& logits) -> Vector {
+  auto max_val = std::ranges::max(
+    logits | std::views::transform(&Val::data));
+
   auto exps = Vector{}; exps.reserve(logits.size());
   std::ranges::transform(logits, std::back_inserter(exps),
     [max_val](const auto& v) { return (v - Val(max_val)).exp(); });
+
   auto total = vsum(exps);
-  auto out = Vector{}; out.reserve(exps.size());
+  auto out   = Vector{}; out.reserve(exps.size());
   std::ranges::transform(exps, std::back_inserter(out),
     [&total](const auto& e) { return e / total; });
+
   return out;
 }
 
-auto rmsnorm(const Vector& x) -> Vector {
+/// \brief RMS normalisation: `x / sqrt(mean(x²) + ε)`.
+/// \param x  Input vector.
+/// \return   Normalised vector (same size).
+[[nodiscard]] auto rmsnorm(const Vector& x) -> Vector {
   auto sq = Vector{}; sq.reserve(x.size());
   std::ranges::transform(x, std::back_inserter(sq),
     [](const auto& xi) { return xi * xi; });
-  auto ms    = vsum(sq) / Val((Scalar)x.size());
+
+    auto ms    = vsum(sq) / Val(static_cast<Scalar>(x.size()));
   auto scale = (ms + Val(Scalar{1e-5})).pow(Scalar{-0.5});
+
   auto out = Vector{}; out.reserve(x.size());
-  for (const auto& xi : x) out.push_back(xi * scale);
+  std::ranges::transform(x, std::back_inserter(out),
+    [&scale](const auto& xi) { return xi * scale; });
+
   return out;
 }
 
-// ── Globals ─────────────────────────────────────────────────────────
-auto n_layer    = 1;   // transformer depth
-auto n_embd     = 16;  // embedding dimension
-auto block_size = 16;  // max context length
-auto n_head     = 4;   // attention heads
-auto head_dim   = 0;   // n_embd / n_head (derived)
-auto vocab_size = 0;
-auto BOS        = 0;
-auto uchars     = Chars{};
-auto state_dict = Dict{};
-auto params     = std::vector<Val>{};
+// ============================================================================
+// 6. Global state (model hyper-parameters, vocabulary, buffers)
+// ============================================================================
 
+auto n_layer    = 1;          ///< Transformer depth.
+auto n_embd     = 16;         ///< Embedding dimension.
+auto block_size = 16;         ///< Maximum context length.
+auto n_head     = 4;          ///< Number of attention heads.
+auto head_dim   = 0;          ///< Derived: n_embd / n_head.
+auto vocab_size = 0;          ///< Vocabulary cardinality.
+auto BOS        = 0;          ///< Beginning-of-sequence token id.
+auto uchars     = Chars{};    ///< Sorted unique characters.
+auto state_dict = Dict{};     ///< Layer weights indexed by name.
+auto params     = std::vector<Val>{};  ///< Flat parameter list.
+
+/// \brief Build a state-dict key for layer \p li and weight \p name.
 auto layer_key(int li, const char* name) -> std::string {
   return "layer" + std::to_string(li) + "." + name;
 }
 
+/// Deterministic random engine (seed chosen for reproducibility).
 auto rng = std::mt19937{42};
 
-auto make_matrix(int nout, int nin, Scalar std = 0.08) -> Matrix {
+/// \brief Create a weight matrix initialised with a normal distribution.
+/// \param nout  Number of rows (output dimension).
+/// \param nin   Number of columns (input dimension).
+/// \param std   Standard deviation of the init distribution.
+[[nodiscard]] auto make_matrix(int nout, int nin, Scalar std = 0.08) -> Matrix {
   auto dist = std::normal_distribution<Scalar>{Scalar{0}, std};
   auto m = Matrix(nout, Vector(nin));
   for (auto& row : m)
@@ -206,18 +303,35 @@ auto make_matrix(int nout, int nin, Scalar std = 0.08) -> Matrix {
   return m;
 }
 
-// ── Forward pass ────────────────────────────────────────────────────
-auto gpt(int token_id, int pos_id, KVCache& keys, KVCache& values) -> Vector {
-  // Token + position embedding
+// ============================================================================
+// 7. Forward pass: a small decoder-only transformer
+// ============================================================================
+
+/// \brief Run one forward step of the transformer.
+/// \param token_id  Current input token.
+/// \param pos_id    Position in the sequence.
+/// \param keys      KV-cache for keys   (mutated in-place).
+/// \param values    KV-cache for values (mutated in-place).
+/// \return          Logit vector over the vocabulary.
+///
+/// Architecture (single layer):
+///   token + position embedding → rmsnorm → multi-head self-attention
+///   → residual add → rmsnorm → ReLU MLP → residual add → lm_head
+[[nodiscard]] auto gpt(int token_id, int pos_id, KVCache& keys,
+                       KVCache& values) -> Vector {
+  // ── Embedding ──
   auto x = Vector(n_embd);
-  for (auto i : std::views::iota(0, n_embd))
-    x[i] = state_dict["wte"][token_id][i] + state_dict["wpe"][pos_id][i];
-  x = rmsnorm(x); // not redundant — needed for backward through residual
+  std::ranges::transform(
+    state_dict["wte"][token_id],
+    state_dict["wpe"][pos_id],
+    x.begin(), std::plus<>{});
+  x = rmsnorm(x);
 
   for (auto li : std::views::iota(0, n_layer)) {
-    // ── Multi-head attention ──
+    // ── Multi-head self-attention ──
     auto x_residual = x;
     x = rmsnorm(x);
+
     auto q = linear(x, state_dict[layer_key(li, "attn_wq")]);
     auto k = linear(x, state_dict[layer_key(li, "attn_wk")]);
     auto v = linear(x, state_dict[layer_key(li, "attn_wv")]);
@@ -225,64 +339,97 @@ auto gpt(int token_id, int pos_id, KVCache& keys, KVCache& values) -> Vector {
     values[li].push_back(v);
 
     auto x_attn = Vector{}; x_attn.reserve(n_embd);
-    auto T = (int)keys[li].size();
+    auto T      = (int)keys[li].size();
+
     for (auto h : std::views::iota(0, n_head)) {
       auto hs = h * head_dim;
+
+      // Scaled dot-product attention scores across all time steps
       auto attn_logits = Vector{}; attn_logits.reserve(T);
       for (auto t : std::views::iota(0, T)) {
-        auto s = Val(Scalar{0});
-        for (auto j : std::views::iota(0, head_dim))
-          s = s + q[hs + j] * keys[li][t][hs + j];
-        attn_logits.push_back(s / Val(std::sqrt((Scalar)head_dim)));
+        auto s = std::ranges::fold_left(
+          std::views::iota(0, head_dim) | std::views::transform(
+            [&](int j) { return q[hs + j] * keys[li][t][hs + j]; }),
+          Val{}, std::plus<>{});
+        attn_logits.push_back(s / Val(std::sqrt(Scalar(head_dim))));
       }
+
       auto attn_weights = softmax(attn_logits);
-      auto head_out = Vector(head_dim, Val(Scalar{0}));
+
+      // Weighted sum of values
+      auto head_out = Vector(head_dim, Val{});
       for (auto t : std::views::iota(0, T))
         for (auto j : std::views::iota(0, head_dim))
           head_out[j] = head_out[j] + attn_weights[t] * values[li][t][hs + j];
+
       std::ranges::copy(head_out, std::back_inserter(x_attn));
     }
+
     x = linear(x_attn, state_dict[layer_key(li, "attn_wo")]);
-    for (auto i : std::views::iota(0, n_embd))
-      x[i] = x[i] + x_residual[i];
+    std::ranges::transform(x, x_residual, x.begin(), std::plus<>{});
 
     // ── MLP block ──
     x_residual = x;
     x = rmsnorm(x);
     x = linear(x, state_dict[layer_key(li, "mlp_fc1")]);
-    std::ranges::transform(x, x.begin(), [](const auto& xi) { return xi.relu(); });
+    std::ranges::for_each(x, [](Val& xi) { xi = xi.relu(); });
     x = linear(x, state_dict[layer_key(li, "mlp_fc2")]);
-    for (auto i : std::views::iota(0, n_embd))
-      x[i] = x[i] + x_residual[i];
+    std::ranges::transform(x, x_residual, x.begin(), std::plus<>{});
   }
+
   return linear(x, state_dict["lm_head"]);
 }
 
-// ── Dataset loader ──────────────────────────────────────────────────
+// ============================================================================
+// 8. Dataset loading
+// ============================================================================
+
+/// \brief Download Karpathy's `names.txt` if not already present locally.
+/// \param path  Local file path.
+///
+/// Tries `curl` first, then `wget`.  Prints an error and aborts if both fail.
 auto ensure_dataset(const std::string& path) -> void {
   if (std::filesystem::exists(path)) return;
-  auto url = std::string{"https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt"};
+
+  static constexpr auto url =
+    "https://raw.githubusercontent.com/karpathy/makemore/988aa59/names.txt";
+
   std::cout << "⬇️  downloading " << url << " ...\n";
-  auto cmd = "curl -fsSL '" + url + "' -o '" + path +
-    "' || wget -q '" + url + "' -O '" + path + "'";
+  auto cmd = "curl -fsSL '" + std::string(url) + "' -o '" + path +
+    "' || wget -q '" + std::string(url) + "' -O '" + path + "'";
+
   if (std::system(cmd.c_str()) != 0 || !std::filesystem::exists(path)) {
-    std::cerr << "❌ could not fetch dataset. download manually:\n  " << url << "\n  → " << path << "\n";
+    std::cerr << "❌ could not fetch dataset. download manually:\n"
+              << "  " << url << "\n  → " << path << "\n";
     std::exit(1);
   }
 }
 
-// ── Main ────────────────────────────────────────────────────────────
+// ============================================================================
+// 9. Entry point: train a character-level GPT on a list of names
+// ============================================================================
+
+/// \brief Train a tiny GPT and generate synthetic names.
+///
+/// Steps:
+///   1. Load and shuffle the dataset.
+///   2. Build a character-level vocabulary.
+///   3. Initialise weights with a normal distribution.
+///   4. Run Adam-optimised training for 1000 steps.
+///   5. Sample 20 novel names via ancestral sampling.
 auto main() -> int {
   std::cout << "🧠 GPT — pure C++23 autograd transformer\n\n";
 
-  // Load dataset
+  // ── Load dataset ───────────────────────────────────────────────────
   ensure_dataset("input.txt");
+
   auto docs = std::vector<std::string>{};
   {
-    auto f = std::ifstream{"input.txt"};
+    auto f    = std::ifstream{"input.txt"};
     auto line = std::string{};
     while (std::getline(f, line)) {
-      while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' '))
+      while (!line.empty() &&
+             (line.back() == '\r' || line.back() == '\n' || line.back() == ' '))
         line.pop_back();
       if (!line.empty()) docs.push_back(line);
     }
@@ -290,14 +437,16 @@ auto main() -> int {
   std::ranges::shuffle(docs, rng);
   std::cout << "📚 docs: " << docs.size() << "\n";
 
-  // Build char-level tokenizer
+  // ── Build char-level tokeniser ─────────────────────────────────────
   {
     auto seen = std::unordered_set<char>{};
     for (const auto& d : docs)
-      for (auto c : d) seen.insert(c);
+      std::ranges::for_each(d, [&seen](char c) { seen.insert(c); });
+
     uchars.assign(seen.begin(), seen.end());
     std::ranges::sort(uchars);
   }
+
   BOS        = (int)uchars.size();
   vocab_size = (int)uchars.size() + 1;
   std::cout << "🔤 vocab size: " << vocab_size << "\n";
@@ -306,70 +455,83 @@ auto main() -> int {
     return (int)(std::ranges::lower_bound(uchars, c) - uchars.begin());
   };
 
-  // Init weights
+  // ── Initialise weights ─────────────────────────────────────────────
   head_dim = n_embd / n_head;
+
   state_dict["wte"]     = make_matrix(vocab_size, n_embd);
   state_dict["wpe"]     = make_matrix(block_size, n_embd);
   state_dict["lm_head"] = make_matrix(vocab_size, n_embd);
+
   for (auto i : std::views::iota(0, n_layer)) {
-    state_dict[layer_key(i, "attn_wq")] = make_matrix(n_embd, n_embd);
-    state_dict[layer_key(i, "attn_wk")] = make_matrix(n_embd, n_embd);
-    state_dict[layer_key(i, "attn_wv")] = make_matrix(n_embd, n_embd);
-    state_dict[layer_key(i, "attn_wo")] = make_matrix(n_embd, n_embd);
-    state_dict[layer_key(i, "mlp_fc1")] = make_matrix(4 * n_embd, n_embd);
-    state_dict[layer_key(i, "mlp_fc2")] = make_matrix(n_embd, 4 * n_embd);
+    auto key = [i](const char* name) { return layer_key(i, name); };
+    state_dict[key("attn_wq")] = make_matrix(n_embd, n_embd);
+    state_dict[key("attn_wk")] = make_matrix(n_embd, n_embd);
+    state_dict[key("attn_wv")] = make_matrix(n_embd, n_embd);
+    state_dict[key("attn_wo")] = make_matrix(n_embd, n_embd);
+    state_dict[key("mlp_fc1")] = make_matrix(4 * n_embd, n_embd);
+    state_dict[key("mlp_fc2")] = make_matrix(n_embd, 4 * n_embd);
   }
+
   for (auto& [name, mat] : state_dict)
     for (auto& row : mat)
       for (auto& p : row) params.push_back(p);
+
   std::cout << "⚙️  params: " << params.size() << "\n";
 
-  // Adam optimizer buffers
+  // ── Adam optimiser state ───────────────────────────────────────────
   auto learning_rate = Scalar{0.01};
   auto beta1         = Scalar{0.85};
   auto beta2         = Scalar{0.99};
-  auto eps_adam      = Scalar{1e-8};
-  auto m             = Weights(params.size(), Scalar{0});
-  auto v             = Weights(params.size(), Scalar{0});
+  auto eps           = Scalar{1e-8};
 
-  // ── Training loop ──
+  auto adam_m = Weights(params.size(), Scalar{0});
+  auto adam_v = Weights(params.size(), Scalar{0});
+
+  // ── Training loop ──────────────────────────────────────────────────
   auto num_steps  = 1000;
   auto batch_size = 8;
-  std::cout << "\n🏋️  training " << num_steps << " steps (batch=" << batch_size << ")...\n\n";
+
+  std::cout << "\n🏋️  training " << num_steps << " steps (batch="
+            << batch_size << ")...\n\n";
 
   for (auto step : std::views::iota(0, num_steps)) {
-    // Accumulate gradients across batch
+    // Forward & accumulate gradients over the batch
     auto all_losses = Vector{};
     for (auto b : std::views::iota(0, batch_size)) {
       const auto& doc = docs[(step * batch_size + b) % docs.size()];
+
       auto tokens = Tokens{}; tokens.reserve(doc.size() + 2);
       tokens.push_back(BOS);
-      for (auto c : doc) tokens.push_back(char_to_id(c));
+      std::ranges::transform(doc, std::back_inserter(tokens), char_to_id);
       tokens.push_back(BOS);
-      auto n = std::min(block_size, (int)tokens.size() - 1);
 
+      auto n      = std::min(block_size, (int)tokens.size() - 1);
       auto keys   = KVCache(n_layer);
       auto values = KVCache(n_layer);
+
       for (auto pos_id : std::views::iota(0, n)) {
-        auto logits   = gpt(tokens[pos_id], pos_id, keys, values);
-        auto probs    = softmax(logits);
-        auto target   = tokens[pos_id + 1];
-        all_losses.push_back(-probs[target].log());
+        auto logits = gpt(tokens[pos_id], pos_id, keys, values);
+        auto probs  = softmax(logits);
+        all_losses.push_back(-probs[tokens[pos_id + 1]].log());
       }
     }
 
-    auto loss = Val(Scalar{1} / (int)all_losses.size()) * vsum(all_losses);
+    auto loss = Val(Scalar{1} / Scalar(all_losses.size())) * vsum(all_losses);
     loss.backward();
 
-    // Adam update
-    auto lr_t = learning_rate * (Scalar{1} - (Scalar)step / num_steps);
+    // Adam parameter update
+    auto lr_t = learning_rate * (Scalar{1} - Scalar(step) / Scalar(num_steps));
     for (auto i : std::views::iota(0u, params.size())) {
       auto g = params[i].grad();
-      m[i]  = beta1 * m[i] + (Scalar{1} - beta1) * g;
-      v[i]  = beta2 * v[i] + (Scalar{1} - beta2) * g * g;
-      auto m_hat = m[i] / (Scalar{1} - std::pow(beta1, (Scalar)(step + 1)));
-      auto v_hat = v[i] / (Scalar{1} - std::pow(beta2, (Scalar)(step + 1)));
-      params[i].set_data(params[i].data() - lr_t * m_hat / (std::sqrt(v_hat) + eps_adam));
+
+      adam_m[i] = beta1 * adam_m[i] + (Scalar{1} - beta1) * g;
+      adam_v[i] = beta2 * adam_v[i] + (Scalar{1} - beta2) * g * g;
+
+      auto m_hat = adam_m[i] / (Scalar{1} - std::pow(beta1, Scalar(step + 1)));
+      auto v_hat = adam_v[i] / (Scalar{1} - std::pow(beta2, Scalar(step + 1)));
+
+      params[i].set_data(
+        params[i].data() - lr_t * m_hat / (std::sqrt(v_hat) + eps));
       params[i].zero_grad();
     }
 
@@ -377,27 +539,35 @@ auto main() -> int {
               << "  loss " << loss.data() << "\r" << std::flush;
   }
 
-  // ── Inference — generate new names ──
+  // ── Inference: generate new names ──────────────────────────────────
   auto temperature = Scalar{0.5};
   std::cout << "\n\n✨ generating names...\n\n";
+
   for (auto i : std::views::iota(0, 20)) {
-    auto keys   = KVCache(n_layer);
-    auto values = KVCache(n_layer);
+    auto keys    = KVCache(n_layer);
+    auto values  = KVCache(n_layer);
     auto token_id = BOS;
     auto sample   = std::string{};
+
     for (auto pos_id : std::views::iota(0, block_size)) {
       auto logits = gpt(token_id, pos_id, keys, values);
+
       auto scaled = Vector{}; scaled.reserve(logits.size());
       std::ranges::transform(logits, std::back_inserter(scaled),
         [temperature](const auto& l) { return l / Val(temperature); });
+
       auto probs   = softmax(scaled);
       auto weights = Weights{}; weights.reserve(probs.size());
       std::ranges::transform(probs, std::back_inserter(weights),
         [](const auto& p) { return p.data(); });
-      token_id = std::discrete_distribution<int>{weights.begin(), weights.end()}(rng);
+
+      token_id = std::discrete_distribution<int>{
+        weights.begin(), weights.end()}(rng);
+
       if (token_id == BOS) break;
       sample.push_back(uchars[token_id]);
     }
+
     std::cout << "  " << (i + 1) << ". " << sample << "\n";
   }
 
