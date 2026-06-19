@@ -7,7 +7,8 @@
 ///          optimisation, character-level tokenisation, and ancestral
 ///          sampling at inference time.
 /// @style   AAA, trailing return types, std::ranges, concept-constrained
-///          templates, snake_case for template classes.
+///          templates, snake_case for template classes, CamelCase for
+///          public type aliases.
 
 #include <algorithm>
 #include <cmath>
@@ -181,18 +182,18 @@ public:
 };
 
 // ============================================================================
-// 3. Concrete type aliases
+// 3. Concrete type aliases  (CamelCase for user-facing code)
 // ============================================================================
 
-using scalar   = double;                            ///< Default numeric type.
-using val      = value<scalar>;                     ///< Autograd value.
-using vector   = std::vector<val>;                  ///< Autograd vector.
-using matrix   = std::vector<vector>;               ///< Weight matrix.
-using weights  = std::vector<scalar>;               ///< Raw float buffer.
-using tokens   = std::vector<int>;                  ///< Token sequence.
-using chars    = std::vector<char>;                 ///< Character vocabulary.
-using kv_cache = std::vector<std::vector<vector>>;  ///< [layer][time]->embedding.
-using dict     = std::unordered_map<std::string, matrix>;
+using Scalar   = double;                             ///< Default numeric type.
+using Val      = value<Scalar>;                      ///< Autograd value.
+using Vector   = std::vector<Val>;                   ///< Autograd vector.
+using Matrix   = std::vector<Vector>;                ///< Weight matrix.
+using Weights  = std::vector<Scalar>;                ///< Raw float buffer.
+using Tokens   = std::vector<int>;                   ///< Token sequence.
+using Chars    = std::vector<char>;                  ///< Character vocabulary.
+using KVCache  = std::vector<std::vector<Vector>>;   ///< [layer][time]→embedding.
+using Dict     = std::unordered_map<std::string, Matrix>;
 
 // ============================================================================
 // 4. Generic vector utilities
@@ -200,9 +201,9 @@ using dict     = std::unordered_map<std::string, matrix>;
 
 /// @brief Sum all elements of a vector using range-based fold.
 /// @param xs  Input vector of autograd values.
-/// @return    A single val equal to the element-wise sum.
-[[nodiscard]] auto vsum(const vector& xs) -> val {
-  return std::ranges::fold_left(xs, val{}, std::plus<>{});
+/// @return    A single Val equal to the element-wise sum.
+[[nodiscard]] auto vsum(const Vector& xs) -> Val {
+  return std::ranges::fold_left(xs, Val{}, std::plus<>{});
 }
 
 // ============================================================================
@@ -213,18 +214,18 @@ using dict     = std::unordered_map<std::string, matrix>;
 /// @param x  Input vector of size nin.
 /// @param w  Weight matrix of shape (nout, nin).
 /// @return   Output vector of size nout.
-[[nodiscard]] auto linear(const vector& x, const matrix& w) -> vector {
-  auto out = vector{}; out.reserve(w.size());
+[[nodiscard]] auto linear(const Vector& x, const Matrix& w) -> Vector {
+  auto out = Vector{}; out.reserve(w.size());
 
   /// Compute a single row of the output: dot product of x with one row.
-  auto dot_row = [&x](const vector& row) -> val {
+  auto dot_row = [&x](const Vector& row) -> Val {
     return std::ranges::fold_left(
       std::views::zip(row, x) | std::views::transform(
-        [](const auto& p) -> val {
+        [](const auto& p) -> Val {
           const auto& [a, b] = p;
           return a * b;
         }),
-      val{}, std::plus<>{});
+      Val{}, std::plus<>{});
   };
 
   std::ranges::transform(w, std::back_inserter(out), dot_row);
@@ -234,16 +235,16 @@ using dict     = std::unordered_map<std::string, matrix>;
 /// @brief Softmax normalisation: exp(x_i - max) / sum(exp(...)).
 /// @param logits  Raw score vector.
 /// @return        Probability distribution (same size, sums to 1).
-[[nodiscard]] auto softmax(const vector& logits) -> vector {
+[[nodiscard]] auto softmax(const Vector& logits) -> Vector {
   auto max_val = std::ranges::max(
-    logits | std::views::transform(&val::data));
+    logits | std::views::transform(&Val::data));
 
-  auto exps = vector{}; exps.reserve(logits.size());
+  auto exps = Vector{}; exps.reserve(logits.size());
   std::ranges::transform(logits, std::back_inserter(exps),
-    [max_val](const auto& v) { return (v - val(max_val)).exp(); });
+    [max_val](const auto& v) { return (v - Val(max_val)).exp(); });
 
   auto total = vsum(exps);
-  auto out   = vector{}; out.reserve(exps.size());
+  auto out   = Vector{}; out.reserve(exps.size());
   std::ranges::transform(exps, std::back_inserter(out),
     [&total](const auto& e) { return e / total; });
 
@@ -253,15 +254,15 @@ using dict     = std::unordered_map<std::string, matrix>;
 /// @brief RMS normalisation: x / sqrt(mean(x^2) + epsilon).
 /// @param x  Input vector.
 /// @return   Normalised vector (same size).
-[[nodiscard]] auto rmsnorm(const vector& x) -> vector {
-  auto sq = vector{}; sq.reserve(x.size());
+[[nodiscard]] auto rmsnorm(const Vector& x) -> Vector {
+  auto sq = Vector{}; sq.reserve(x.size());
   std::ranges::transform(x, std::back_inserter(sq),
     [](const auto& xi) { return xi * xi; });
 
-  auto ms    = vsum(sq) / val(static_cast<scalar>(x.size()));
-  auto scale = (ms + val(scalar{1e-5})).pow(scalar{-0.5});
+  auto ms    = vsum(sq) / Val(static_cast<Scalar>(x.size()));
+  auto scale = (ms + Val(Scalar{1e-5})).pow(Scalar{-0.5});
 
-  auto out = vector{}; out.reserve(x.size());
+  auto out = Vector{}; out.reserve(x.size());
   std::ranges::transform(x, std::back_inserter(out),
     [&scale](const auto& xi) { return xi * scale; });
 
@@ -279,9 +280,9 @@ auto n_head     = 4;          ///< Number of attention heads.
 auto head_dim   = 0;          ///< Derived: n_embd / n_head.
 auto vocab_size = 0;          ///< Vocabulary cardinality.
 auto BOS        = 0;          ///< Beginning-of-sequence token id.
-auto uchars     = chars{};    ///< Sorted unique characters.
-auto state_dict = dict{};     ///< Layer weights indexed by name.
-auto params     = std::vector<val>{};  ///< Flat parameter list.
+auto uchars     = Chars{};    ///< Sorted unique characters.
+auto state_dict = Dict{};     ///< Layer weights indexed by name.
+auto params     = std::vector<Val>{};  ///< Flat parameter list.
 
 /// @brief Build a state-dict key for layer li and weight name.
 auto layer_key(int li, const char* name) -> std::string {
@@ -295,11 +296,11 @@ auto rng = std::mt19937{42};
 /// @param nout  Number of rows (output dimension).
 /// @param nin   Number of columns (input dimension).
 /// @param stdv  Standard deviation of the init distribution.
-[[nodiscard]] auto make_matrix(int nout, int nin, scalar stdv = 0.08) -> matrix {
-  auto dist = std::normal_distribution<scalar>{scalar{0}, stdv};
-  auto m = matrix(nout, vector(nin));
+[[nodiscard]] auto make_matrix(int nout, int nin, Scalar stdv = 0.08) -> Matrix {
+  auto dist = std::normal_distribution<Scalar>{Scalar{0}, stdv};
+  auto m = Matrix(nout, Vector(nin));
   for (auto& row : m)
-    std::ranges::generate(row, [&] { return val(dist(rng)); });
+    std::ranges::generate(row, [&] { return Val(dist(rng)); });
   return m;
 }
 
@@ -315,12 +316,12 @@ auto rng = std::mt19937{42};
 /// @return          Logit vector over the vocabulary.
 ///
 /// Architecture (single layer):
-///   token + position embedding -> rmsnorm -> multi-head self-attention
-///   -> residual add -> rmsnorm -> ReLU MLP -> residual add -> lm_head
-[[nodiscard]] auto gpt(int token_id, int pos_id, kv_cache& keys,
-                       kv_cache& values) -> vector {
+///   token + position embedding → rmsnorm → multi-head self-attention
+///   → residual add → rmsnorm → ReLU MLP → residual add → lm_head
+[[nodiscard]] auto gpt(int token_id, int pos_id, KVCache& keys,
+                       KVCache& values) -> Vector {
   // ── Embedding ──
-  auto x = vector(n_embd);
+  auto x = Vector(n_embd);
   std::ranges::transform(
     state_dict["wte"][token_id],
     state_dict["wpe"][pos_id],
@@ -338,26 +339,26 @@ auto rng = std::mt19937{42};
     keys[li].push_back(k);
     values[li].push_back(v);
 
-    auto x_attn = vector{}; x_attn.reserve(n_embd);
+    auto x_attn = Vector{}; x_attn.reserve(n_embd);
     auto T      = (int)keys[li].size();
 
     for (auto h : std::views::iota(0, n_head)) {
       auto hs = h * head_dim;
 
       // Scaled dot-product attention scores across all time steps
-      auto attn_logits = vector{}; attn_logits.reserve(T);
+      auto attn_logits = Vector{}; attn_logits.reserve(T);
       for (auto t : std::views::iota(0, T)) {
         auto s = std::ranges::fold_left(
           std::views::iota(0, head_dim) | std::views::transform(
             [&](int j) { return q[hs + j] * keys[li][t][hs + j]; }),
-          val{}, std::plus<>{});
-        attn_logits.push_back(s / val(std::sqrt(scalar(head_dim))));
+          Val{}, std::plus<>{});
+        attn_logits.push_back(s / Val(std::sqrt(Scalar(head_dim))));
       }
 
       auto attn_weights = softmax(attn_logits);
 
       // Weighted sum of values
-      auto head_out = vector(head_dim, val{});
+      auto head_out = Vector(head_dim, Val{});
       for (auto t : std::views::iota(0, T))
         for (auto j : std::views::iota(0, head_dim))
           head_out[j] = head_out[j] + attn_weights[t] * values[li][t][hs + j];
@@ -372,7 +373,7 @@ auto rng = std::mt19937{42};
     x_residual = x;
     x = rmsnorm(x);
     x = linear(x, state_dict[layer_key(li, "mlp_fc1")]);
-    std::ranges::for_each(x, [](val& xi) { xi = xi.relu(); });
+    std::ranges::for_each(x, [](Val& xi) { xi = xi.relu(); });
     x = linear(x, state_dict[layer_key(li, "mlp_fc2")]);
     std::ranges::transform(x, x_residual, x.begin(), std::plus<>{});
   }
@@ -400,7 +401,7 @@ auto ensure_dataset(const std::string& path) -> void {
 
   if (std::system(cmd.c_str()) != 0 || !std::filesystem::exists(path)) {
     std::cerr << "❌ could not fetch dataset. download manually:\n"
-              << "  " << url << "\n  -> " << path << "\n";
+              << "  " << url << "\n  → " << path << "\n";
     std::exit(1);
   }
 }
@@ -479,13 +480,13 @@ auto main() -> int {
   std::cout << "⚙️  params: " << params.size() << "\n";
 
   // ── Adam optimiser state ───────────────────────────────────────────
-  auto learning_rate = scalar{0.01};
-  auto beta1         = scalar{0.85};
-  auto beta2         = scalar{0.99};
-  auto eps           = scalar{1e-8};
+  auto learning_rate = Scalar{0.01};
+  auto beta1         = Scalar{0.85};
+  auto beta2         = Scalar{0.99};
+  auto eps           = Scalar{1e-8};
 
-  auto adam_m = weights(params.size(), scalar{0});
-  auto adam_v = weights(params.size(), scalar{0});
+  auto adam_m = Weights(params.size(), Scalar{0});
+  auto adam_v = Weights(params.size(), Scalar{0});
 
   // ── Training loop ──────────────────────────────────────────────────
   auto num_steps  = 1000;
@@ -496,18 +497,18 @@ auto main() -> int {
 
   for (auto step : std::views::iota(0, num_steps)) {
     // Forward & accumulate gradients over the batch
-    auto all_losses = vector{};
+    auto all_losses = Vector{};
     for (auto b : std::views::iota(0, batch_size)) {
       const auto& doc = docs[(step * batch_size + b) % docs.size()];
 
-      auto toks = tokens{}; toks.reserve(doc.size() + 2);
+      auto toks = Tokens{}; toks.reserve(doc.size() + 2);
       toks.push_back(BOS);
       std::ranges::transform(doc, std::back_inserter(toks), char_to_id);
       toks.push_back(BOS);
 
       auto n      = std::min(block_size, (int)toks.size() - 1);
-      auto keys   = kv_cache(n_layer);
-      auto values = kv_cache(n_layer);
+      auto keys   = KVCache(n_layer);
+      auto values = KVCache(n_layer);
 
       for (auto pos_id : std::views::iota(0, n)) {
         auto logits = gpt(toks[pos_id], pos_id, keys, values);
@@ -516,19 +517,19 @@ auto main() -> int {
       }
     }
 
-    auto loss = val(scalar{1} / scalar(all_losses.size())) * vsum(all_losses);
+    auto loss = Val(Scalar{1} / Scalar(all_losses.size())) * vsum(all_losses);
     loss.backward();
 
     // Adam parameter update
-    auto lr_t = learning_rate * (scalar{1} - scalar(step) / scalar(num_steps));
+    auto lr_t = learning_rate * (Scalar{1} - Scalar(step) / Scalar(num_steps));
     for (auto i : std::views::iota(0u, params.size())) {
       auto g = params[i].grad();
 
-      adam_m[i] = beta1 * adam_m[i] + (scalar{1} - beta1) * g;
-      adam_v[i] = beta2 * adam_v[i] + (scalar{1} - beta2) * g * g;
+      adam_m[i] = beta1 * adam_m[i] + (Scalar{1} - beta1) * g;
+      adam_v[i] = beta2 * adam_v[i] + (Scalar{1} - beta2) * g * g;
 
-      auto m_hat = adam_m[i] / (scalar{1} - std::pow(beta1, scalar(step + 1)));
-      auto v_hat = adam_v[i] / (scalar{1} - std::pow(beta2, scalar(step + 1)));
+      auto m_hat = adam_m[i] / (Scalar{1} - std::pow(beta1, Scalar(step + 1)));
+      auto v_hat = adam_v[i] / (Scalar{1} - std::pow(beta2, Scalar(step + 1)));
 
       params[i].set_data(
         params[i].data() - lr_t * m_hat / (std::sqrt(v_hat) + eps));
@@ -540,24 +541,24 @@ auto main() -> int {
   }
 
   // ── Inference: generate new names ──────────────────────────────────
-  auto temperature = scalar{0.5};
+  auto temperature = Scalar{0.5};
   std::cout << "\n\n✨ generating names...\n\n";
 
   for (auto i : std::views::iota(0, 20)) {
-    auto keys    = kv_cache(n_layer);
-    auto values  = kv_cache(n_layer);
+    auto keys    = KVCache(n_layer);
+    auto values  = KVCache(n_layer);
     auto token_id = BOS;
     auto sample   = std::string{};
 
     for (auto pos_id : std::views::iota(0, block_size)) {
       auto logits = gpt(token_id, pos_id, keys, values);
 
-      auto scaled = vector{}; scaled.reserve(logits.size());
+      auto scaled = Vector{}; scaled.reserve(logits.size());
       std::ranges::transform(logits, std::back_inserter(scaled),
-        [temperature](const auto& l) { return l / val(temperature); });
+        [temperature](const auto& l) { return l / Val(temperature); });
 
       auto probs   = softmax(scaled);
-      auto wghts = weights{}; wghts.reserve(probs.size());
+      auto wghts = Weights{}; wghts.reserve(probs.size());
       std::ranges::transform(probs, std::back_inserter(wghts),
         [](const auto& p) { return p.data(); });
 
