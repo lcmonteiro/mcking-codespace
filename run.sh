@@ -1,149 +1,132 @@
 #!/usr/bin/env bash
+# run.sh — Mcking's universal runner. One script to rule them all.
 #
-# run.sh — Unified runner for any file in mcking-codespace.
+#   ./run.sh cpp/gpt.cpp       # 🔧 compile & run C++
+#   ./run.sh python/script.py  # 🐍 run python
+#   ./run.sh web/index.html    # 🌐 open in browser
+#   ./run.sh scripts/foo.js    # 📦 run with node
+#   ./run.sh scripts/bar.ps1   # ⚡ run with pwsh
 #
-# Usage:
-#   ./run.sh path/to/file.cpp   # compile C++ and run
-#   ./run.sh path/to/file.py    # run Python
-#   ./run.sh path/to/file.js    # run Node.js
-#   ./run.sh path/to/file.ts    # run TypeScript (tsx / ts-node)
-#   ./run.sh path/to/file.sh    # run as Bash script
-#   ./run.sh path/to/file.ps1   # run as PowerShell script
-#   ./run.sh path/to/file.go    # go run
-#   ./run.sh path/to/file.rs    # compile Rust and run
-#   ./run.sh path/to/file.c     # compile C and run
-#
-# If no extension is recognised, fallback to shebang detection.
-# ---------------------------------------------------------------------------
+# Supported: cpp cc cxx c py js ts sh ps1 go rs html
+# Shebang fallback for everything else.
+# ----------------------------------------------------------------------
 
 set -euo pipefail
 
+die() { echo "❌ $1"; exit 1; }
+need() { command -v "$1" &>/dev/null || die "$1 not found — install it first"; }
+
 file="${1:?Usage: $0 <filename>}"
+[ -f "$file" ] || die "File not found: $file"
 
-if [ ! -f "$file" ]; then
-  echo "❌ File not found: $file"
-  exit 1
-fi
-
-dir=$(dirname "$file")
 base=$(basename "$file")
 name="${base%.*}"
 ext="${base##*.}"
 
 case "$ext" in
 
-  # ── C++ ─────────────────────────────────────────────────────────
+  # ── C++ ──────────────────────────────────────────────
   cpp|cc|cxx|c++ )
-    echo "🔧 Compiling C++: $file"
-    if command -v g++ &>/dev/null; then
-      g++ -std=c++23 -O2 -Wall -Wextra -o "$name" "$file" && "./$name"
-    elif command -v clang++ &>/dev/null; then
-      clang++ -std=c++23 -O2 -Wall -Wextra -o "$name" "$file" && "./$name"
-    else
-      echo "❌ No C++ compiler found (g++ / clang++)"
-      exit 1
-    fi
+    need g++
+    echo "🔧 Compiling $base..."
+    g++ -std=c++23 -O2 -Wall -Wextra -o "$name" "$file"
+    echo "🚀 Running..."
+    "./$name"
     ;;
 
-  # ── C ───────────────────────────────────────────────────────────
+  # ── C ────────────────────────────────────────────────
   c )
-    echo "🔧 Compiling C: $file"
-    if command -v gcc &>/dev/null; then
-      gcc -std=c11 -O2 -Wall -Wextra -o "$name" "$file" && "./$name"
-    elif command -v clang &>/dev/null; then
-      clang -std=c11 -O2 -Wall -Wextra -o "$name" "$file" && "./$name"
-    else
-      echo "❌ No C compiler found (gcc / clang)"
-      exit 1
-    fi
+    need gcc
+    echo "🔧 Compiling $base..."
+    gcc -std=c11 -O2 -Wall -Wextra -o "$name" "$file"
+    echo "🚀 Running..."
+    "./$name"
     ;;
 
-  # ── Python ──────────────────────────────────────────────────────
+  # ── Python ───────────────────────────────────────────
   py )
-    if command -v python3 &>/dev/null; then
-      python3 "$file"
-    elif command -v python &>/dev/null; then
-      python "$file"
-    else
-      echo "❌ Python not found"
-      exit 1
-    fi
+    need python3
+    echo "🐍 $base"
+    python3 "$file"
     ;;
 
-  # ── JavaScript ──────────────────────────────────────────────────
+  # ── JavaScript ───────────────────────────────────────
   js )
-    if command -v node &>/dev/null; then
-      node "$file"
-    else
-      echo "❌ Node.js not found"
-      exit 1
-    fi
+    need node
+    echo "📦 $base"
+    node "$file"
     ;;
 
-  # ── TypeScript ──────────────────────────────────────────────────
+  # ── TypeScript ───────────────────────────────────────
   ts )
     if command -v tsx &>/dev/null; then
+      echo "📦 $base (tsx)"
       tsx "$file"
     elif command -v ts-node &>/dev/null; then
+      echo "📦 $base (ts-node)"
       ts-node "$file"
-    elif command -v npx &>/dev/null; then
-      npx tsx "$file"
     else
-      echo "❌ No TS runner found (install tsx or ts-node)"
-      exit 1
+      need npx
+      echo "📦 $base (tsx via npx)"
+      npx tsx "$file"
     fi
     ;;
 
-  # ── Shell ───────────────────────────────────────────────────────
+  # ── Shell ────────────────────────────────────────────
   sh )
+    echo "⚡ $base"
     bash "$file"
     ;;
 
-  # ── PowerShell ──────────────────────────────────────────────────
+  # ── PowerShell ───────────────────────────────────────
   ps1 )
     if command -v pwsh &>/dev/null; then
+      echo "⚡ $base (pwsh)"
       pwsh "$file"
     elif command -v powershell &>/dev/null; then
+      echo "⚡ $base (powershell)"
       powershell -File "$file"
     else
-      echo "❌ PowerShell not found"
-      exit 1
+      die "PowerShell not found"
     fi
     ;;
 
-  # ── Go ──────────────────────────────────────────────────────────
+  # ── Go ───────────────────────────────────────────────
   go )
+    need go
+    echo "🔧 $base"
     go run "$file"
     ;;
 
-  # ── Rust ────────────────────────────────────────────────────────
+  # ── Rust ─────────────────────────────────────────────
   rs )
-    echo "🔧 Compiling Rust: $file"
-    rustc -O -o "$name" "$file" && "./$name"
+    need rustc
+    echo "🔧 Compiling $base..."
+    rustc -O -o "$name" "$file"
+    echo "🚀 Running..."
+    "./$name"
     ;;
 
-  # ── HTML (open in browser) ──────────────────────────────────────
+  # ── HTML — open in browser ───────────────────────────
   html )
-    echo "🌐 Opening $file in browser..."
+    echo "🌐 Opening $base..."
     case "$(uname -s)" in
-      Linux*)   xdg-open "$file" 2>/dev/null || echo "  open manually" ;;
+      Linux*)   xdg-open "$file" 2>/dev/null || echo "   → open $file manually" ;;
       Darwin*)  open "$file" ;;
       CYGWIN*|MINGW*|MSYS*) start "$file" ;;
-      *)        echo "  open $file in your browser" ;;
+      *)        echo "   → open $file in your browser" ;;
     esac
     ;;
 
-  # ── Fallback: try shebang ───────────────────────────────────────
+  # ── Fallback: shebang ────────────────────────────────
   * )
-    # Read first line and check for #!
     read -r shebang < "$file"
     if [[ "$shebang" =~ ^#! ]]; then
-      echo "⚡ Running via shebang: $shebang"
+      echo "⚡ $base (shebang)"
       "$file"
     else
-      echo "❌ Unknown extension '.$ext' and no shebang found."
-      echo "   Supported: cpp/cc/cxx, c, py, js, ts, sh, ps1, go, rs, html"
-      exit 1
+      die "Unknown .$ext and no shebang — supported: cpp/cc/cxx/c/py/js/ts/sh/ps1/go/rs/html"
     fi
     ;;
+
 esac
