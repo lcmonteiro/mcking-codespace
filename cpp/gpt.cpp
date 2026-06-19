@@ -27,6 +27,8 @@
 #include <unordered_set>
 #include <vector>
 
+namespace mcking {
+
 // ============================================================================
 // 1. Numeric concept
 // ============================================================================
@@ -89,16 +91,16 @@ public:
 
   /// @name Data access
   ///@{
-  [[nodiscard]] auto data()     const -> scalar { return ptr->data; }
-  [[nodiscard]] auto grad()     const -> scalar { return ptr->grad; }
-  auto set_data(scalar d)             -> void  { ptr->data = d; }
-  auto zero_grad()                    -> void  { ptr->grad = scalar{0}; }
+  auto data()     const -> scalar { return ptr->data; }
+  auto grad()     const -> scalar { return ptr->grad; }
+  auto set_data(scalar d)      -> void { ptr->data = d; }
+  auto zero_grad()             -> void { ptr->grad = scalar{0}; }
   ///@}
 
   // ── Arithmetic operators ─────────────────────────────────────────────
 
   /// @brief Element-wise addition.
-  [[nodiscard]] auto operator+(const value& o) const -> value {
+  auto operator+(const value& o) const -> value {
     return value(std::make_shared<node>(
       ptr->data + o.ptr->data,
       typename node::children{ptr, o.ptr},
@@ -114,7 +116,7 @@ public:
   }
 
   /// @brief Power: this ** p.
-  [[nodiscard]] auto pow(scalar p) const -> value {
+  auto pow(scalar p) const -> value {
     auto out = std::pow(ptr->data, p);
     return value(std::make_shared<node>(
       out,
@@ -124,7 +126,7 @@ public:
   }
 
   /// @brief Natural logarithm.
-  [[nodiscard]] auto log() const -> value {
+  auto log() const -> value {
     return value(std::make_shared<node>(
       std::log(ptr->data),
       typename node::children{ptr},
@@ -132,7 +134,7 @@ public:
   }
 
   /// @brief Exponential function.
-  [[nodiscard]] auto exp() const -> value {
+  auto exp() const -> value {
     auto e = std::exp(ptr->data);
     return value(std::make_shared<node>(
       e,
@@ -141,7 +143,7 @@ public:
   }
 
   /// @brief Rectified linear unit.
-  [[nodiscard]] auto relu() const -> value {
+  auto relu() const -> value {
     auto out = std::max(scalar{0}, ptr->data);
     return value(std::make_shared<node>(
       out,
@@ -150,9 +152,9 @@ public:
         ptr->data > scalar{0} ? scalar{1} : scalar{0}}));
   }
 
-  [[nodiscard]] auto operator-()  const -> value { return *this * value(scalar{-1}); }
-  [[nodiscard]] auto operator-(const value& o) const -> value { return *this + (-o); }
-  [[nodiscard]] auto operator/(const value& o) const -> value { return *this * o.pow(scalar{-1}); }
+  auto operator-()  const -> value { return *this * value(scalar{-1}); }
+  auto operator-(const value& o) const -> value { return *this + (-o); }
+  auto operator/(const value& o) const -> value { return *this * o.pow(scalar{-1}); }
 
   // ── Backpropagation ──────────────────────────────────────────────────
 
@@ -186,8 +188,8 @@ public:
 // ============================================================================
 
 using Scalar   = double;                             ///< Default numeric type.
-using Val      = value<Scalar>;                      ///< Autograd value.
-using Vector   = std::vector<Val>;                   ///< Autograd vector.
+using Value    = value<Scalar>;                      ///< Autograd value.
+using Vector   = std::vector<Value>;                 ///< Autograd vector.
 using Matrix   = std::vector<Vector>;                ///< Weight matrix.
 using Weights  = std::vector<Scalar>;                ///< Raw float buffer.
 using Tokens   = std::vector<int>;                   ///< Token sequence.
@@ -199,11 +201,15 @@ using Dict     = std::unordered_map<std::string, Matrix>;
 // 4. Generic vector utilities
 // ============================================================================
 
-/// @brief Sum all elements of a vector using range-based fold.
-/// @param xs  Input vector of autograd values.
-/// @return    A single Val equal to the element-wise sum.
-[[nodiscard]] auto vsum(const Vector& xs) -> Val {
-  return std::ranges::fold_left(xs, Val{}, std::plus<>{});
+/// @brief Sum all elements of a value-range using range-based fold.
+/// @param xs  Input range of autograd values.
+/// @return    A single value equal to the element-wise sum.
+/// @tparam R  A range whose reference type is `value<S>` for some S.
+template<std::ranges::input_range R>
+  requires requires { typename std::remove_reference_t<std::ranges::range_reference_t<R>>; }
+auto vsum(R&& xs) -> std::remove_reference_t<std::ranges::range_reference_t<R>> {
+  using ValT = std::remove_reference_t<std::ranges::range_reference_t<R>>;
+  return std::ranges::fold_left(std::forward<R>(xs), ValT{}, std::plus<>{});
 }
 
 // ============================================================================
@@ -214,14 +220,14 @@ using Dict     = std::unordered_map<std::string, Matrix>;
 /// @param x  Input vector of size nin.
 /// @param w  Weight matrix of shape (nout, nin).
 /// @return   Output vector of size nout.
-[[nodiscard]] auto linear(const Vector& x, const Matrix& w) -> Vector {
+auto linear(const Vector& x, const Matrix& w) -> Vector {
   auto out = Vector{}; out.reserve(w.size());
 
   // Dot product of row with x — zip_transform avoids the zip|transform dance.
-  auto dot_row = [&x](const Vector& row) -> Val {
+  auto dot_row = [&x](const Vector& row) -> Value {
     return std::ranges::fold_left(
       std::views::zip_transform(std::multiplies<>{}, row, x),
-      Val{}, std::plus<>{});
+      Value{}, std::plus<>{});
   };
 
   std::ranges::transform(w, std::back_inserter(out), dot_row);
@@ -231,13 +237,13 @@ using Dict     = std::unordered_map<std::string, Matrix>;
 /// @brief Softmax normalisation: exp(x_i - max) / sum(exp(...)).
 /// @param logits  Raw score vector.
 /// @return        Probability distribution (same size, sums to 1).
-[[nodiscard]] auto softmax(const Vector& logits) -> Vector {
+auto softmax(const Vector& logits) -> Vector {
   auto max_val = std::ranges::max(
-    logits | std::views::transform(&Val::data));
+    logits | std::views::transform(&Value::data));
 
   auto exps = Vector{}; exps.reserve(logits.size());
   std::ranges::transform(logits, std::back_inserter(exps),
-    [max_val](const auto& v) { return (v - Val(max_val)).exp(); });
+    [max_val](const auto& v) { return (v - Value(max_val)).exp(); });
 
   auto total = vsum(exps);
   auto out   = Vector{}; out.reserve(exps.size());
@@ -250,13 +256,13 @@ using Dict     = std::unordered_map<std::string, Matrix>;
 /// @brief RMS normalisation: x / sqrt(mean(x^2) + epsilon).
 /// @param x  Input vector.
 /// @return   Normalised vector (same size).
-[[nodiscard]] auto rmsnorm(const Vector& x) -> Vector {
+auto rmsnorm(const Vector& x) -> Vector {
   auto sq = Vector{}; sq.reserve(x.size());
   std::ranges::transform(x, std::back_inserter(sq),
     [](const auto& xi) { return xi * xi; });
 
-  auto ms    = vsum(sq) / Val(static_cast<Scalar>(x.size()));
-  auto scale = (ms + Val(Scalar{1e-5})).pow(Scalar{-0.5});
+  auto ms    = vsum(sq) / Value(static_cast<Scalar>(x.size()));
+  auto scale = (ms + Value(Scalar{1e-5})).pow(Scalar{-0.5});
 
   auto out = Vector{}; out.reserve(x.size());
   std::ranges::transform(x, std::back_inserter(out),
@@ -278,7 +284,7 @@ auto vocab_size = 0;          ///< Vocabulary cardinality.
 auto BOS        = 0;          ///< Beginning-of-sequence token id.
 auto uchars     = Chars{};    ///< Sorted unique characters.
 auto state_dict = Dict{};     ///< Layer weights indexed by name.
-auto params     = std::vector<Val>{};  ///< Flat parameter list.
+auto params     = std::vector<Value>{};  ///< Flat parameter list.
 
 /// @brief Build a state-dict key for layer li and weight name.
 auto layer_key(int li, const char* name) -> std::string {
@@ -292,11 +298,11 @@ auto rng = std::mt19937{42};
 /// @param nout  Number of rows (output dimension).
 /// @param nin   Number of columns (input dimension).
 /// @param stdv  Standard deviation of the init distribution.
-[[nodiscard]] auto make_matrix(int nout, int nin, Scalar stdv = 0.08) -> Matrix {
+auto make_matrix(int nout, int nin, Scalar stdv = 0.08) -> Matrix {
   auto dist = std::normal_distribution<Scalar>{Scalar{0}, stdv};
   auto m = Matrix(nout, Vector(nin));
   for (auto& row : m)
-    std::ranges::generate(row, [&] { return Val(dist(rng)); });
+    std::ranges::generate(row, [&] { return Value(dist(rng)); });
   return m;
 }
 
@@ -314,8 +320,8 @@ auto rng = std::mt19937{42};
 /// Architecture (single layer):
 ///   token + position embedding → rmsnorm → multi-head self-attention
 ///   → residual add → rmsnorm → ReLU MLP → residual add → lm_head
-[[nodiscard]] auto gpt(int token_id, int pos_id, KVCache& keys,
-                       KVCache& values) -> Vector {
+auto gpt(int token_id, int pos_id, KVCache& keys,
+         KVCache& values) -> Vector {
   // ── Embedding ──
   auto x = Vector(n_embd);
   std::ranges::transform(
@@ -347,14 +353,14 @@ auto rng = std::mt19937{42};
         auto s = std::ranges::fold_left(
           std::views::iota(0, head_dim) | std::views::transform(
             [&](int j) { return q[hs + j] * keys[li][t][hs + j]; }),
-          Val{}, std::plus<>{});
-        attn_logits.push_back(s / Val(std::sqrt(Scalar(head_dim))));
+          Value{}, std::plus<>{});
+        attn_logits.push_back(s / Value(std::sqrt(Scalar(head_dim))));
       }
 
       auto attn_weights = softmax(attn_logits);
 
       // Weighted sum of values
-      auto head_out = Vector(head_dim, Val{});
+      auto head_out = Vector(head_dim, Value{});
       for (auto t : std::views::iota(0, T))
         for (auto j : std::views::iota(0, head_dim))
           head_out[j] = head_out[j] + attn_weights[t] * values[li][t][hs + j];
@@ -369,7 +375,7 @@ auto rng = std::mt19937{42};
     x_residual = x;
     x = rmsnorm(x);
     x = linear(x, state_dict[layer_key(li, "mlp_fc1")]);
-    std::ranges::for_each(x, [](Val& xi) { xi = xi.relu(); });
+    std::ranges::for_each(x, [](Value& xi) { xi = xi.relu(); });
     x = linear(x, state_dict[layer_key(li, "mlp_fc2")]);
     std::ranges::transform(x, x_residual, x.begin(), std::plus<>{});
   }
@@ -513,7 +519,7 @@ auto main() -> int {
       }
     }
 
-    auto loss = Val(Scalar{1} / Scalar(all_losses.size())) * vsum(all_losses);
+    auto loss = Value(Scalar{1} / Scalar(all_losses.size())) * vsum(all_losses);
     loss.backward();
 
     // Adam parameter update
@@ -551,7 +557,7 @@ auto main() -> int {
 
       auto scaled = Vector{}; scaled.reserve(logits.size());
       std::ranges::transform(logits, std::back_inserter(scaled),
-        [temperature](const auto& l) { return l / Val(temperature); });
+        [temperature](const auto& l) { return l / Value(temperature); });
 
       auto probs   = softmax(scaled);
       auto wghts = Weights{}; wghts.reserve(probs.size());
@@ -570,4 +576,11 @@ auto main() -> int {
 
   std::cout << "\n✅ done.\n";
   return 0;
+}
+
+} // namespace mcking
+
+// main() at file scope — required by the C++ standard for the program entry point.
+auto main() -> int {
+  return mcking::main();
 }
