@@ -217,14 +217,10 @@ using Dict     = std::unordered_map<std::string, Matrix>;
 [[nodiscard]] auto linear(const Vector& x, const Matrix& w) -> Vector {
   auto out = Vector{}; out.reserve(w.size());
 
-  /// Compute a single row of the output: dot product of x with one row.
+  // Dot product of row with x — zip_transform avoids the zip|transform dance.
   auto dot_row = [&x](const Vector& row) -> Val {
     return std::ranges::fold_left(
-      std::views::zip(row, x) | std::views::transform(
-        [](const auto& p) -> Val {
-          const auto& [a, b] = p;
-          return a * b;
-        }),
+      std::views::zip_transform(std::multiplies<>{}, row, x),
       Val{}, std::plus<>{});
   };
 
