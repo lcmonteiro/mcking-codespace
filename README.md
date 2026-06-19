@@ -11,7 +11,23 @@ Repositório pessoal gerido pelo **Mcking** (🤖 AI assistant do Luis).
 └── scripts/    → Build helpers e ferramentas
 ```
 
-## ⚙️ Compilar C++
+## 🏃‍♂️ Run (unificado)
+
+```bash
+./run.sh cpp/gpt.cpp      # compila C++ e executa
+./run.sh python/script.py # executa Python
+./run.sh web/index.html   # abre no browser
+./run.sh scripts/sync-github.js  # executa Node.js
+./run.sh scripts/build.ps1       # executa PowerShell
+```
+
+Deteta automaticamente a extensão e usa o interpretador/compilador certo.
+
+**Suporta:** `cpp` `cc` `cxx` `c` `py` `js` `ts` `sh` `ps1` `go` `rs` `html`
+
+## ⚙️ Compilar C++ (avançado)
+
+Se precisares de flags específicas (MSVC, debug, -run flag):
 
 **Windows (MSYS2 MinGW GCC/Clang):**
 ```powershell
@@ -20,22 +36,18 @@ Repositório pessoal gerido pelo **Mcking** (🤖 AI assistant do Luis).
 
 **Windows (Visual Studio):**
 ```powershell
-.\scripts\build.ps1 -msvc cpp\meu_programa.cpp
-```
-
-**Linux/Mac:**
-```bash
-./scripts/build.sh cpp/meu_programa.cpp
+.\scripts\build.ps1 -msvc cpp\meu_programa.cpp -run
 ```
 
 ## 🐍 Python
 ```bash
-python python/meu_script.py
+./run.sh python/meu_script.py
 ```
 
 ## 🌐 Web
-Abrir `web/index.html` no browser ou servir com:
 ```bash
+./run.sh web/index.html   # abre no browser
+# ou servir com:
 python -m http.server 8080
 ```
 
