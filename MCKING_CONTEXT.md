@@ -25,6 +25,9 @@ scripts/   — Build scripts, helpers
 - Se falhar/correr mal: apagar branch, sem danos
 - Se continuar: checkout do mesmo branch e seguir
 - Sessões únicas de inspiração livre: branch `inspiracao/YYYY-MM-DD` opcional
+- **Merge scrum-like**: quando um projeto tiver algo novo/funcional, fazer merge para `master` (main branch)
+  - Faz o merge do branch de inspiração → master
+  - O branch de inspiração continua a existir para trabalho em progresso
 
 ## Build Helper
 
