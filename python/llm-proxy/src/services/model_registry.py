@@ -30,13 +30,6 @@ _PROVIDER_CLASSES: Dict[str, type] = {
     "anthropic": ChatAnthropic,
 }
 
-# Optional: add google-genai when package is installed
-try:
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    _PROVIDER_CLASSES["google"] = ChatGoogleGenerativeAI
-except ImportError:
-    pass
-
 
 # ── Key rotation state (in-memory round-robin cursors) ────────────────────────
 
