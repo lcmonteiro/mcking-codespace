@@ -6,20 +6,25 @@ Flow:
   2. For the winning provider, fetch an active ProviderKey (rotation strategy applied).
   3. Instantiate the appropriate LangChain ChatModel with the resolved key.
   4. Return the model + metadata for downstream use.
+
+LangChain Runnables exposed:
+  - ModelResolveRunnable  : resolve abstraction → (ChatModel, mapping, key)
 """
 from __future__ import annotations
 
 import random
-from itertools import cycle
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import ModelAbstraction, ModelMapping, ProviderKey
+from src.db.session import AsyncSessionLocal
 from config.settings import settings
 
 
@@ -47,34 +52,150 @@ class _RoundRobinPool:
 _rr_pool = _RoundRobinPool()
 
 
-# ── ModelRegistry ─────────────────────────────────────────────────────────────
+# ─── Pydantic schemas for Runnable I/O ────────────────────────────────────────
+
+class ModelResolveInput(BaseModel):
+    """Input schema for ModelResolveRunnable."""
+    abstraction:     ModelAbstraction
+    override_params: Dict[str, Any] = {}
+
+
+class ModelResolveOutput(BaseModel):
+    """Output schema for ModelResolveRunnable."""
+    success:      bool = False
+    model:        Optional[Any] = None
+    mapping:      Optional[Any] = None
+    provider_key: Optional[Any] = None
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+# ─── Runnable: ModelResolveRunnable ───────────────────────────────────────────
+
+class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
+    """
+    LangChain Runnable that resolves a model abstraction to a concrete
+    LangChain ChatModel instance with provider key rotation.
+
+    Usage:
+        result = await runnable.ainvoke(ModelResolveInput(abstraction=ModelAbstraction.CODING))
+        if result.success:
+            chat_model = result.model
+    """
+
+    async def ainvoke(
+        self,
+        input: ModelResolveInput,
+        config: Optional[RunnableConfig] = None,
+        **kwargs: Any,
+    ) -> ModelResolveOutput:
+        async with AsyncSessionLocal() as db:
+            # 1. Get the best mapping
+            result = await db.execute(
+                select(ModelMapping)
+                .where(
+                    ModelMapping.abstraction == input.abstraction,
+                    ModelMapping.is_active == True,
+                )
+                .order_by(ModelMapping.priority.desc())
+            )
+            mapping: Optional[ModelMapping] = result.scalars().first()
+            if not mapping:
+                return ModelResolveOutput(
+                    success=False,
+                    error_message=(
+                        f"No active model mapping found for abstraction '{input.abstraction.value}'. "
+                        "Configure one via POST /admin/model-mappings."
+                    ),
+                )
+
+            # 2. Pick a provider key (rotation)
+            key_result = await db.execute(
+                select(ProviderKey)
+                .where(ProviderKey.provider == mapping.provider, ProviderKey.is_active == True)
+                .order_by(ProviderKey.priority.desc())
+            )
+            keys: List[ProviderKey] = key_result.scalars().all()
+            if not keys:
+                return ModelResolveOutput(
+                    success=False,
+                    error_message=(
+                        f"No active API key registered for provider '{mapping.provider}'. "
+                        "Add one via POST /admin/provider-keys."
+                    ),
+                )
+
+            strategy = settings.KEY_ROTATION_STRATEGY
+            if strategy == "round_robin":
+                idx = _rr_pool.next_index(mapping.provider, len(keys))
+                key = keys[idx]
+            elif strategy == "random":
+                key = random.choice(keys)
+            else:
+                key = keys[0]
+
+            # 3. Instantiate the ChatModel
+            cls = _PROVIDER_CLASSES.get(mapping.provider)
+            if cls is None:
+                return ModelResolveOutput(
+                    success=False,
+                    error_message=f"Unsupported provider: '{mapping.provider}'",
+                )
+
+            base_params: Dict[str, Any] = {
+                "model": mapping.model_name,
+                **(mapping.extra_params or {}),
+            }
+            if mapping.max_tokens is not None:
+                base_params["max_tokens"] = mapping.max_tokens
+            if mapping.temperature is not None:
+                base_params["temperature"] = mapping.temperature
+            base_params.update(input.override_params)
+
+            key_param = _api_key_param(mapping.provider)
+            base_params[key_param] = key.api_key
+
+            try:
+                model = cls(**base_params)
+                return ModelResolveOutput(
+                    success=True,
+                    model=model,
+                    mapping=mapping,
+                    provider_key=key,
+                )
+            except Exception as exc:
+                return ModelResolveOutput(
+                    success=False,
+                    error_message=f"Failed to instantiate model: {exc}",
+                )
+
+
+# ── Internal ModelRegistry (kept for admin/list compatibility) ────────────────
 
 class ModelRegistry:
     """
-    Resolves a ModelAbstraction to a ready-to-use LangChain chat model.
+    Internal implementation. Prefer using ModelResolveRunnable when composing
+    LangChain pipelines.
     """
-
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
-
-    # ── Public API ────────────────────────────────────────────────────────────
 
     async def resolve(
         self,
         abstraction: ModelAbstraction,
         override_params: Optional[Dict[str, Any]] = None,
     ) -> Tuple[BaseChatModel, ModelMapping, ProviderKey]:
-        """
-        Returns (chat_model, mapping, provider_key) for the given abstraction.
-        Raises ValueError if no active mapping / key is found.
-        """
-        mapping = await self._get_best_mapping(abstraction)
-        key     = await self._pick_provider_key(mapping.provider)
-        model   = self._instantiate(mapping, key, override_params or {})
-        return model, mapping, key
+        runnable = ModelResolveRunnable()
+        result = await runnable.ainvoke(ModelResolveInput(
+            abstraction=abstraction,
+            override_params=override_params or {},
+        ))
+        if not result.success:
+            raise ValueError(result.error_message or "Model resolution failed")
+        return result.model, result.mapping, result.provider_key
 
     async def list_abstractions(self) -> List[Dict[str, Any]]:
-        """Return all active abstractions with their backing model info."""
         result = await self._db.execute(
             select(ModelMapping)
             .where(ModelMapping.is_active == True)
@@ -95,74 +216,8 @@ class ModelRegistry:
                 seen[key]["fallbacks"].append(f"{r.provider}/{r.model_name}")
         return list(seen.values())
 
-    # ── Private helpers ───────────────────────────────────────────────────────
 
-    async def _get_best_mapping(self, abstraction: ModelAbstraction) -> ModelMapping:
-        result = await self._db.execute(
-            select(ModelMapping)
-            .where(
-                ModelMapping.abstraction == abstraction,
-                ModelMapping.is_active == True,
-            )
-            .order_by(ModelMapping.priority.desc())
-        )
-        mapping = result.scalars().first()
-        if not mapping:
-            raise ValueError(
-                f"No active model mapping found for abstraction '{abstraction.value}'. "
-                "Configure one via POST /admin/model-mappings."
-            )
-        return mapping
-
-    async def _pick_provider_key(self, provider: str) -> ProviderKey:
-        result = await self._db.execute(
-            select(ProviderKey)
-            .where(ProviderKey.provider == provider, ProviderKey.is_active == True)
-            .order_by(ProviderKey.priority.desc())
-        )
-        keys: List[ProviderKey] = result.scalars().all()
-        if not keys:
-            raise ValueError(
-                f"No active API key registered for provider '{provider}'. "
-                "Add one via POST /admin/provider-keys."
-            )
-
-        strategy = settings.KEY_ROTATION_STRATEGY
-        if strategy == "round_robin":
-            idx = _rr_pool.next_index(provider, len(keys))
-            return keys[idx]
-        elif strategy == "random":
-            return random.choice(keys)
-        else:  # priority (default: first = highest priority)
-            return keys[0]
-
-    def _instantiate(
-        self,
-        mapping: ModelMapping,
-        key: ProviderKey,
-        override_params: Dict[str, Any],
-    ) -> BaseChatModel:
-        cls = _PROVIDER_CLASSES.get(mapping.provider)
-        if cls is None:
-            raise ValueError(f"Unsupported provider: '{mapping.provider}'")
-
-        base_params: Dict[str, Any] = {
-            "model": mapping.model_name,
-            **(mapping.extra_params or {}),
-        }
-        if mapping.max_tokens is not None:
-            base_params["max_tokens"] = mapping.max_tokens
-        if mapping.temperature is not None:
-            base_params["temperature"] = mapping.temperature
-
-        base_params.update(override_params)
-
-        # Inject the API key — each provider class uses a different param name
-        key_param = _api_key_param(mapping.provider)
-        base_params[key_param] = key.api_key
-
-        return cls(**base_params)
-
+# ── Private helpers ───────────────────────────────────────────────────────────
 
 def _api_key_param(provider: str) -> str:
     return {
