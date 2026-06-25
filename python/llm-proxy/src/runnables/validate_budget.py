@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from langchain_core.runnables import Runnable, RunnableConfig
 
 from src.db.models import RequestStatus
-from src.services.runs.budget_auth import BudgetAuthInput, BudgetAuthRunnable
+from src.runnables.budget_auth import BudgetAuthInput, BudgetAuthRunnable
 
 
 class ValidateBudgetRunnable(Runnable[Dict, Dict]):

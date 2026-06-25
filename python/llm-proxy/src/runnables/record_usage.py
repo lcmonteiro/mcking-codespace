@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from langchain_core.runnables import Runnable, RunnableConfig
 
-from src.services.runs.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
+from src.runnables.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
 
 
 class RecordUsageRunnable(Runnable[Dict, Dict]):

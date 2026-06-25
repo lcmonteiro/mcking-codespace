@@ -55,7 +55,7 @@ class ModelRegistry:
         abstraction: ModelAbstraction,
         override_params: Optional[Dict[str, Any]] = None,
     ) -> Tuple[BaseChatModel, ModelMapping, ProviderKey]:
-        from src.services.runs.model_resolve import ModelResolveInput, ModelResolveRunnable
+        from src.runnables.model_resolve import ModelResolveInput, ModelResolveRunnable
         runnable = ModelResolveRunnable()
         result = await runnable.ainvoke(ModelResolveInput(
             abstraction=abstraction,

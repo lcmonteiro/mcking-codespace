@@ -47,7 +47,7 @@ class BudgetService:
         self, raw_token: str, requested_abstraction: Optional[ModelAbstraction] = None
     ) -> Any:
         # Lazy import to avoid circular deps with runs/
-        from src.services.runs.budget_auth import BudgetAuthInput, BudgetAuthRunnable
+        from src.runnables.budget_auth import BudgetAuthInput, BudgetAuthRunnable
         runnable = BudgetAuthRunnable()
         result = await runnable.ainvoke(BudgetAuthInput(
             raw_token=raw_token, abstraction=requested_abstraction
@@ -57,7 +57,7 @@ class BudgetService:
         return result.access_token
 
     async def deduct(self, **kwargs: Any) -> None:
-        from src.services.runs.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
+        from src.runnables.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
         runnable = BudgetDeductRunnable()
         await runnable.ainvoke(BudgetDeductInput(**kwargs))
 

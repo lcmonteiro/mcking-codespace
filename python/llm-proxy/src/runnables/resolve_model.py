@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from langchain_core.runnables import Runnable, RunnableConfig
 
 from src.db.models import RequestStatus
-from src.services.runs.model_resolve import ModelResolveInput, ModelResolveRunnable
+from src.runnables.model_resolve import ModelResolveInput, ModelResolveRunnable
 
 
 class ResolveModelRunnable(Runnable[Dict, Dict]):
