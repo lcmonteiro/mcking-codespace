@@ -1,33 +1,28 @@
 """
-ProxyRunnable — end-to-end proxy pipeline as a single LangChain Runnable.
+Proxy Pipeline — end-to-end LLM Proxy as a pure LangChain Runnable.
 
-Assembles a LangGraph with 5 nodes (all LangChain Runnables) and exposes:
-  - ProxyRunnable        : non-streaming entry point
-  - run_proxy()          : convenience wrapper
-  - run_proxy_stream()   : streaming entry point (bypasses graph)
+Estrutura:
+  [preprocess]  →  [model.astream()]  →  [postprocess]
+     auth                    tokens           audit_log
+     resolve
+     prepare
 
-Every path through the graph ends at [RecordUsage] so even blocked/errored
-requests are logged.
+Non-streaming:   proxy_runnable.ainvoke(input)
+Streaming:       proxy_runnable.astream(input)  →  yields tokens natively
 """
 from __future__ import annotations
 
 import time
 import uuid
-from typing import Any, AsyncIterator, Dict, List, Optional, TypedDict
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from langchain_core.messages import (
     AIMessage, BaseMessage, HumanMessage, SystemMessage,
 )
 from langchain_core.runnables import Runnable, RunnableConfig
-from langgraph.graph import END, StateGraph
 from pydantic import BaseModel
 
 from src.db.models import ModelAbstraction, RequestStatus
-from src.runnables.validate_budget import ValidateBudgetRunnable
-from src.runnables.resolve_model import ResolveModelRunnable
-from src.runnables.prepare_messages import PrepareMessagesRunnable
-from src.runnables.call_llm import CallLlmRunnable
-from src.runnables.record_usage import RecordUsageRunnable
 from src.runnables.budget_auth import BudgetAuthInput, BudgetAuthRunnable
 from src.runnables.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
 from src.runnables.model_resolve import ModelResolveInput, ModelResolveRunnable
@@ -35,93 +30,10 @@ from src.services.budget import BudgetError
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# State — shared TypedDict for LangGraph
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class ProxyState(TypedDict):
-    """Mutable state flowing through the graph pipeline."""
-    # ── Inputs ─────────────────────────────────────────────────────────────────
-    request_id:       str
-    raw_token:        str
-    abstraction:      ModelAbstraction
-    messages:         List[Dict[str, str]]
-    override_params:  Dict[str, Any]
-    ip_address:       Optional[str]
-
-    # ── Populated by nodes ─────────────────────────────────────────────────────
-    access_token:     Optional[Any]          # AccessToken ORM
-    model:            Optional[Any]          # BaseChatModel instance
-    mapping:          Optional[Any]          # ModelMapping ORM
-    provider_key:     Optional[Any]          # ProviderKey ORM
-    lc_messages:      Optional[List[BaseMessage]]
-
-    # ── Outputs ────────────────────────────────────────────────────────────────
-    response_text:      Optional[str]
-    prompt_tokens:      int
-    completion_tokens:  int
-    latency_ms:         int
-    status:             RequestStatus
-    error_message:      Optional[str]
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Routing functions (plain callables for LangGraph conditional edges)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def route_after_budget(state: ProxyState) -> str:
-    return "resolve_model" if state.get("status") == RequestStatus.SUCCESS else "record_usage"
-
-
-def route_after_model(state: ProxyState) -> str:
-    return "prepare_messages" if state.get("status") == RequestStatus.SUCCESS else "record_usage"
-
-
-def route_after_llm(state: ProxyState) -> str:
-    return "record_usage"
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Pipeline (compiled singleton)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _build_graph() -> StateGraph:
-    """Assemble the LangGraph state machine from Runnable nodes."""
-    g = StateGraph(ProxyState)
-
-    g.add_node("validate_budget",  ValidateBudgetRunnable())
-    g.add_node("resolve_model",    ResolveModelRunnable())
-    g.add_node("prepare_messages", PrepareMessagesRunnable())
-    g.add_node("call_llm",         CallLlmRunnable())
-    g.add_node("record_usage",     RecordUsageRunnable())
-
-    g.set_entry_point("validate_budget")
-
-    g.add_conditional_edges("validate_budget", route_after_budget, {
-        "resolve_model": "resolve_model",
-        "record_usage":  "record_usage",
-    })
-    g.add_conditional_edges("resolve_model", route_after_model, {
-        "prepare_messages": "prepare_messages",
-        "record_usage":     "record_usage",
-    })
-    g.add_edge("prepare_messages", "call_llm")
-    g.add_conditional_edges("call_llm", route_after_llm, {
-        "record_usage": "record_usage",
-    })
-    g.add_edge("record_usage", END)
-
-    return g
-
-
-_graph = _build_graph().compile()
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ProxyRunnable — top-level Runnable
+# I/O Schemas
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ProxyInput(BaseModel):
-    """Input schema for ProxyRunnable (non-streaming)."""
     raw_token:       str
     abstraction:     ModelAbstraction
     messages:        List[Dict[str, str]]
@@ -130,7 +42,6 @@ class ProxyInput(BaseModel):
 
 
 class ProxyOutput(BaseModel):
-    """Output schema for ProxyRunnable (non-streaming)."""
     request_id:       str = ""
     response_text:    Optional[str] = None
     prompt_tokens:    int = 0
@@ -143,125 +54,12 @@ class ProxyOutput(BaseModel):
     model_name:       Optional[str] = None
 
 
-class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
-    """
-    End-to-end proxy pipeline as a LangChain Runnable.
-
-    Usage:
-        output = await proxy_runnable.ainvoke(ProxyInput(
-            raw_token="llmp_...",
-            abstraction=ModelAbstraction.CHAT,
-            messages=[{"role": "user", "content": "Hello!"}],
-        ))
-        print(output.response_text)
-    """
-
-    async def ainvoke(
-        self,
-        input: ProxyInput,
-        config: Optional[RunnableConfig] = None,
-        **kwargs: Any,
-    ) -> ProxyOutput:
-        initial: ProxyState = {
-            "request_id":        str(uuid.uuid4()),
-            "raw_token":         input.raw_token,
-            "abstraction":       input.abstraction,
-            "messages":          input.messages,
-            "override_params":   input.override_params,
-            "ip_address":        input.ip_address,
-            "access_token":      None,
-            "model":             None,
-            "mapping":           None,
-            "provider_key":      None,
-            "lc_messages":       None,
-            "response_text":     None,
-            "prompt_tokens":     0,
-            "completion_tokens": 0,
-            "latency_ms":        0,
-            "status":            RequestStatus.SUCCESS,
-            "error_message":     None,
-        }
-        state = await _graph.ainvoke(initial)
-
-        mapping = state.get("mapping")
-        return ProxyOutput(
-            request_id=state.get("request_id", ""),
-            response_text=state.get("response_text"),
-            prompt_tokens=state.get("prompt_tokens", 0),
-            completion_tokens=state.get("completion_tokens", 0),
-            total_tokens=state.get("prompt_tokens", 0) + state.get("completion_tokens", 0),
-            latency_ms=state.get("latency_ms", 0),
-            status=state.get("status", RequestStatus.SUCCESS),
-            error_message=state.get("error_message"),
-            model_provider=mapping.provider if mapping else None,
-            model_name=mapping.model_name if mapping else None,
-        )
-
-
-# Singleton for direct use in routes
-proxy_runnable = ProxyRunnable()
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
-# Convenience entry points (backward-compatible)
+# Internal helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def run_proxy(
-    raw_token: str,
-    abstraction: ModelAbstraction,
-    messages: List[Dict[str, str]],
-    override_params: Optional[Dict[str, Any]] = None,
-    ip_address: Optional[str] = None,
-) -> ProxyOutput:
-    """Non-streaming entry point — delegates to proxy_runnable."""
-    return await proxy_runnable.ainvoke(ProxyInput(
-        raw_token=raw_token,
-        abstraction=abstraction,
-        messages=messages,
-        override_params=override_params or {},
-        ip_address=ip_address,
-    ))
-
-
-async def run_proxy_stream(
-    raw_token: str,
-    abstraction: ModelAbstraction,
-    messages: List[Dict[str, str]],
-    override_params: Optional[Dict[str, Any]] = None,
-    ip_address: Optional[str] = None,
-) -> AsyncIterator[tuple]:
-    """
-    Streaming entry point.
-    Yields (chunk_text, prompt_tokens, completion_tokens, mapping).
-
-    Auth + budget validation happens before streaming; usage is recorded
-    after the stream exhausts.  This bypasses the graph (LangGraph does not
-    natively support streaming token-by-token through the graph), but uses
-    the same individual Runnable services.
-    """
-    request_id = str(uuid.uuid4())
-
-    # ── 1. Auth + budget check ────────────────────────────────────────────────
-    auth = BudgetAuthRunnable()
-    auth_result = await auth.ainvoke(BudgetAuthInput(raw_token=raw_token, abstraction=abstraction))
-    if not auth_result.success:
-        raise BudgetError(
-            auth_result.error_message or "Authentication failed",
-            auth_result.status,
-        )
-
-    # ── 2. Resolve model ──────────────────────────────────────────────────────
-    resolver = ModelResolveRunnable()
-    resolve_result = await resolver.ainvoke(ModelResolveInput(
-        abstraction=abstraction,
-        override_params=override_params or {},
-    ))
-    if not resolve_result.success:
-        raise ValueError(resolve_result.error_message or "Model resolution failed")
-
-    model, mapping, key = resolve_result.model, resolve_result.mapping, resolve_result.provider_key
-
-    # ── 3. Build LangChain messages ───────────────────────────────────────────
+def _prepare_messages(messages: List[Dict[str, str]]) -> List[BaseMessage]:
+    """Convert raw message dicts to LangChain message objects."""
     lc: List[BaseMessage] = []
     for msg in messages:
         role = msg.get("role", "user")
@@ -274,40 +72,218 @@ async def run_proxy_stream(
             lc.append(AIMessage(content=content))
         else:
             lc.append(HumanMessage(content=content))
+    return lc
 
-    # ── 4. Stream ─────────────────────────────────────────────────────────────
-    t0 = time.monotonic()
-    full_text = ""
-    prompt_tokens = 0
-    completion_tokens = 0
 
-    try:
-        async for chunk in model.astream(lc):
-            text = chunk.content or ""
-            full_text += text
-            usage = getattr(chunk, "usage_metadata", None) or {}
-            if usage.get("input_tokens"):
-                prompt_tokens = usage["input_tokens"]
-                completion_tokens = usage.get("output_tokens", 0)
-            yield text, prompt_tokens, completion_tokens, mapping
-    finally:
-        # ── 5. Record usage ───────────────────────────────────────────────────
-        latency = int((time.monotonic() - t0) * 1000)
-        if not prompt_tokens:
-            prompt_tokens = len(" ".join(m.get("content", "") for m in messages).split()) * 4 // 3
-            completion_tokens = len(full_text.split()) * 4 // 3
+async def _setup(input: ProxyInput) -> tuple:
+    """
+    Pre-processing: authenticate token + resolve model + prepare messages.
+    Returns (token, model, mapping, key, lc_messages).
+    Raises BudgetError or ValueError on failure.
+    """
+    request_id = str(uuid.uuid4())
 
-        deduct = BudgetDeductRunnable()
-        await deduct.ainvoke(BudgetDeductInput(
-            token=auth_result.access_token,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            provider_key_id=key.id,
-            abstraction=abstraction.value,
-            provider=mapping.provider,
-            model_name=mapping.model_name,
-            latency_ms=latency,
-            request_id=request_id,
-            ip_address=ip_address,
-            status=RequestStatus.SUCCESS,
-        ))
+    # 1. Auth + budget check
+    auth = BudgetAuthRunnable()
+    auth_result = await auth.ainvoke(BudgetAuthInput(
+        raw_token=input.raw_token,
+        abstraction=input.abstraction,
+    ))
+    if not auth_result.success:
+        raise BudgetError(
+            auth_result.error_message or "Authentication failed",
+            auth_result.status,
+        )
+    token = auth_result.access_token
+
+    # 2. Resolve model
+    resolver = ModelResolveRunnable()
+    resolve_result = await resolver.ainvoke(ModelResolveInput(
+        abstraction=input.abstraction,
+        override_params=input.override_params,
+    ))
+    if not resolve_result.success:
+        raise ValueError(resolve_result.error_message or "Model resolution failed")
+
+    # 3. Prepare messages
+    lc_messages = _prepare_messages(input.messages)
+
+    return request_id, token, resolve_result.model, resolve_result.mapping, resolve_result.provider_key, lc_messages
+
+
+async def _record(
+    input: ProxyInput,
+    request_id: str,
+    token: Any,
+    key: Any,
+    mapping: Any,
+    prompt_tokens: int,
+    completion_tokens: int,
+    latency_ms: int,
+    status: RequestStatus = RequestStatus.SUCCESS,
+    error_message: Optional[str] = None,
+) -> None:
+    """Post-processing: persist audit log and deduct from budget."""
+    deduct = BudgetDeductRunnable()
+    await deduct.ainvoke(BudgetDeductInput(
+        token=token,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        provider_key_id=key.id,
+        abstraction=input.abstraction.value,
+        provider=mapping.provider,
+        model_name=mapping.model_name,
+        latency_ms=latency_ms,
+        request_id=request_id,
+        ip_address=input.ip_address,
+        error_message=error_message,
+        status=status,
+    ))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ProxyRunnable — top-level Runnable (composable, streamable)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
+    """
+    End-to-end proxy pipeline como LangChain Runnable.
+
+    Non-streaming:
+        output = await proxy_runnable.ainvoke(ProxyInput(...))
+
+    Streaming (nativo — tokens do LLM um a um):
+        async for chunk in proxy_runnable.astream(ProxyInput(...)):
+            print(chunk)  # cada token do LLM
+    """
+
+    async def ainvoke(
+        self,
+        input: ProxyInput,
+        config: Optional[RunnableConfig] = None,
+        **kwargs: Any,
+    ) -> ProxyOutput:
+        try:
+            request_id, token, model, mapping, key, lc = await _setup(input)
+        except BudgetError as exc:
+            return ProxyOutput(
+                request_id=str(uuid.uuid4()),
+                status=exc.status,
+                error_message=str(exc),
+            )
+        except ValueError as exc:
+            return ProxyOutput(
+                request_id=str(uuid.uuid4()),
+                status=RequestStatus.ERROR,
+                error_message=str(exc),
+            )
+
+        t0 = time.monotonic()
+        try:
+            response = await model.ainvoke(lc)
+            latency = int((time.monotonic() - t0) * 1000)
+            usage = getattr(response, "usage_metadata", None) or {}
+            prompt_t = usage.get("input_tokens", 0)
+            comp_t = usage.get("output_tokens", 0)
+
+            await _record(input, request_id, token, key, mapping, prompt_t, comp_t, latency)
+
+            return ProxyOutput(
+                request_id=request_id,
+                response_text=response.content,
+                prompt_tokens=prompt_t,
+                completion_tokens=comp_t,
+                total_tokens=prompt_t + comp_t,
+                latency_ms=latency,
+                status=RequestStatus.SUCCESS,
+                model_provider=mapping.provider,
+                model_name=mapping.model_name,
+            )
+        except Exception as exc:
+            latency = int((time.monotonic() - t0) * 1000)
+            prompt_t = len(" ".join(m.get("content", "") for m in input.messages).split()) * 4 // 3
+            await _record(
+                input, request_id, token, key, mapping,
+                prompt_t, 0, latency,
+                status=RequestStatus.ERROR, error_message=str(exc),
+            )
+            return ProxyOutput(
+                request_id=request_id,
+                status=RequestStatus.ERROR,
+                error_message=str(exc),
+                latency_ms=latency,
+            )
+
+    async def astream(
+        self,
+        input: ProxyInput,
+        config: Optional[RunnableConfig] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ProxyOutput]:
+        """
+        Stream de tokens do LLM. Cada iteração devolve um chunk de texto.
+
+        Exemplo:
+            full = ""
+            async for chunk in proxy_runnable.astream(ProxyInput(...)):
+                print(chunk, end="", flush=True)
+                full += chunk
+        """
+        try:
+            request_id, token, model, mapping, key, lc = await _setup(input)
+        except BudgetError as exc:
+            yield ProxyOutput(
+                request_id=str(uuid.uuid4()),
+                status=exc.status,
+                error_message=str(exc),
+            )
+            return
+        except ValueError as exc:
+            yield ProxyOutput(
+                request_id=str(uuid.uuid4()),
+                status=RequestStatus.ERROR,
+                error_message=str(exc),
+            )
+            return
+
+        t0 = time.monotonic()
+        full_text = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        try:
+            async for chunk in model.astream(lc):
+                text = chunk.content or ""
+                full_text += text
+                usage = getattr(chunk, "usage_metadata", None) or {}
+                if usage.get("input_tokens"):
+                    prompt_tokens = usage["input_tokens"]
+                    completion_tokens = usage.get("output_tokens", 0)
+                yield text
+        finally:
+            latency = int((time.monotonic() - t0) * 1000)
+            if not prompt_tokens:
+                prompt_tokens = len(" ".join(m.get("content", "") for m in input.messages).split()) * 4 // 3
+                completion_tokens = len(full_text.split()) * 4 // 3
+
+            await _record(input, request_id, token, key, mapping, prompt_tokens, completion_tokens, latency)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Singleton for direct use
+# ═══════════════════════════════════════════════════════════════════════════════
+
+proxy_runnable = ProxyRunnable()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Compat entry points
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def run_proxy(*args, **kwargs) -> ProxyOutput:
+    return await proxy_runnable.ainvoke(ProxyInput(**kwargs) if not isinstance(kwargs.get("raw_token"), str) else ProxyInput(**kwargs))
+
+
+async def run_proxy_stream(*args, **kwargs) -> AsyncIterator[str]:
+    async for chunk in proxy_runnable.astream(ProxyInput(**kwargs)):
+        yield chunk

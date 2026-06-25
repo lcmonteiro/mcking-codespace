@@ -277,35 +277,35 @@ async def chat_completions(
             },
         )
 
-    state = await run_proxy(
+    result = await run_proxy(
         raw_token=raw_token,
         abstraction=abstraction,
         messages=messages,
         override_params=override,
         ip_address=ip,
     )
-    _raise_if_error(state)
+    _raise_if_error(result)
 
-    mapping = state["mapping"]
-    model_id = f"{mapping.provider}/{mapping.model_name}"
+    model_name = result.model_provider or ""
+    model_id   = f"{result.model_provider}/{result.model_name}" if result.model_provider else body.model
 
     return ChatCompletionResponse(
-        id=f"chatcmpl-{state['request_id']}",
+        id=f"chatcmpl-{result.request_id}",
         created=int(time.time()),
         model=model_id,
         choices=[
             ChatChoice(
                 index=0,
-                message=ChatMessageResponse(content=state["response_text"]),
+                message=ChatMessageResponse(content=result.response_text),
                 finish_reason="stop",
             )
         ],
         usage=UsageWithDetails(
-            prompt_tokens=state["prompt_tokens"],
-            completion_tokens=state["completion_tokens"],
-            total_tokens=state["prompt_tokens"] + state["completion_tokens"],
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
         ),
-        system_fingerprint=f"fp_{state['request_id'][:8]}",
+        system_fingerprint=f"fp_{result.request_id[:8]}",
     )
 
 
@@ -320,44 +320,97 @@ async def _stream_chat(
     """Yield SSE data: lines for streaming chat."""
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     created       = int(time.time())
-    model_id      = body.model  # will be updated after first token
-
+    model_id      = body.model
     include_usage = (body.stream_options or {}).get("include_usage", False)
+    request_id    = str(uuid.uuid4())
 
-    # ── role chunk (first) ────────────────────────────────────────────────────
+    # ── 1. Auth + budget check ────────────────────────────────────────────────
+    from src.runnables.budget_auth import BudgetAuthInput, BudgetAuthRunnable
+    from src.runnables.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
+    from src.runnables.model_resolve import ModelResolveInput, ModelResolveRunnable
+    from src.services.budget import BudgetError
+    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
+    auth = BudgetAuthRunnable()
+    auth_res = await auth.ainvoke(BudgetAuthInput(raw_token=raw_token, abstraction=abstraction))
+    if not auth_res.success:
+        yield _sse_error(auth_res.error_message or "Authentication failed")
+        yield "data: [DONE]\n\n"
+        return
+    token = auth_res.access_token
+
+    # ── 2. Resolve model ──────────────────────────────────────────────────────
+    resolver = ModelResolveRunnable()
+    resolve_res = await resolver.ainvoke(ModelResolveInput(abstraction=abstraction, override_params=override))
+    if not resolve_res.success:
+        yield _sse_error(resolve_res.error_message or "Model resolution failed")
+        yield "data: [DONE]\n\n"
+        return
+    model, mapping, key = resolve_res.model, resolve_res.mapping, resolve_res.provider_key
+    model_id = f"{mapping.provider}/{mapping.model_name}"
+
+    # ── 3. Prepare messages ───────────────────────────────────────────────────
+    lc: List[BaseMessage] = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+        if role == "system":
+            lc.append(SystemMessage(content=content))
+        elif role == "assistant":
+            lc.append(AIMessage(content=content))
+        else:
+            lc.append(HumanMessage(content=content))
+
+    # ── role chunk ────────────────────────────────────────────────────────────
     yield _sse(ChatCompletionChunk(
         id=completion_id, created=created, model=model_id,
         choices=[StreamChoice(index=0, delta=DeltaMessage(role="assistant"), finish_reason=None)],
     ))
 
+    # ── 4. Stream ─────────────────────────────────────────────────────────────
+    t0 = time.monotonic()
+    full_text = ""
     prompt_tokens = 0
     completion_tokens = 0
-    full_text = ""
 
     try:
-        async for chunk_text, p_tok, c_tok, mapping in run_proxy_stream(
-            raw_token=raw_token,
-            abstraction=abstraction,
-            messages=messages,
-            override_params=override,
-            ip_address=ip,
-        ):
-            if mapping:
-                model_id = f"{mapping.provider}/{mapping.model_name}"
-            prompt_tokens     = p_tok
-            completion_tokens = c_tok
-            full_text        += chunk_text
-
+        async for chunk in model.astream(lc):
+            text = chunk.content or ""
+            full_text += text
+            usage = getattr(chunk, "usage_metadata", None) or {}
+            if usage.get("input_tokens"):
+                prompt_tokens = usage["input_tokens"]
+                completion_tokens = usage.get("output_tokens", 0)
             yield _sse(ChatCompletionChunk(
                 id=completion_id, created=created, model=model_id,
-                choices=[StreamChoice(index=0, delta=DeltaMessage(content=chunk_text), finish_reason=None)],
+                choices=[StreamChoice(index=0, delta=DeltaMessage(content=text), finish_reason=None)],
             ))
-
     except Exception as exc:
-        # Emit an error chunk then close
         yield _sse_error(str(exc))
         yield "data: [DONE]\n\n"
         return
+    finally:
+        # ── 5. Record usage ───────────────────────────────────────────────────
+        latency = int((time.monotonic() - t0) * 1000)
+        if not prompt_tokens:
+            prompt_tokens = len(" ".join(m.get("content", "") for m in messages).split()) * 4 // 3
+            completion_tokens = len(full_text.split()) * 4 // 3
+        deduct = BudgetDeductRunnable()
+        await deduct.ainvoke(BudgetDeductInput(
+            token=token,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            provider_key_id=key.id,
+            abstraction=abstraction.value,
+            provider=mapping.provider,
+            model_name=mapping.model_name,
+            latency_ms=latency,
+            request_id=request_id,
+            ip_address=ip,
+            status=RequestStatus.SUCCESS,
+        ))
 
     # ── finish chunk ──────────────────────────────────────────────────────────
     finish_chunk = ChatCompletionChunk(
@@ -431,30 +484,29 @@ async def text_completions(
     if body.max_tokens:
         override["max_tokens"] = body.max_tokens
 
-    state = await run_proxy(
+    result = await run_proxy(
         raw_token=raw_token,
         abstraction=abstraction,
         messages=messages,
         override_params=override,
         ip_address=_client_ip(request),
     )
-    _raise_if_error(state)
+    _raise_if_error(result)
 
-    mapping  = state["mapping"]
-    model_id = f"{mapping.provider}/{mapping.model_name}"
-    text     = state["response_text"] or ""
+    model_id = f"{result.model_provider}/{result.model_name}" if result.model_provider else body.model
+    text     = result.response_text or ""
     if body.echo:
         text = prompt_text + text
 
     return CompletionResponse(
-        id=f"cmpl-{state['request_id']}",
+        id=f"cmpl-{result.request_id}",
         created=int(time.time()),
         model=model_id,
         choices=[CompletionChoice(text=text, index=0)],
         usage=_Usage(
-            prompt_tokens=state["prompt_tokens"],
-            completion_tokens=state["completion_tokens"],
-            total_tokens=state["prompt_tokens"] + state["completion_tokens"],
+            prompt_tokens=result.prompt_tokens,
+            completion_tokens=result.completion_tokens,
+            total_tokens=result.total_tokens,
         ),
     )
 
@@ -612,16 +664,16 @@ def _normalise_message(m: ChatMessageRequest) -> Dict[str, Any]:
     return d
 
 
-def _raise_if_error(state: dict) -> None:
-    if state.get("status") == RequestStatus.BLOCKED:
+def _raise_if_error(result: Any) -> None:
+    if result.status == RequestStatus.BLOCKED:
         raise HTTPException(
             status_code=403,
-            detail=_openai_error(state.get("error_message", "Blocked"), "invalid_request_error"),
+            detail=_openai_error(result.error_message or "Blocked", "invalid_request_error"),
         )
-    if state.get("status") == RequestStatus.ERROR:
+    if result.status == RequestStatus.ERROR:
         raise HTTPException(
             status_code=502,
-            detail=_openai_error(state.get("error_message", "Upstream LLM error"), "server_error"),
+            detail=_openai_error(result.error_message or "Upstream LLM error", "server_error"),
         )
 
 
