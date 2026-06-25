@@ -318,101 +318,55 @@ async def _stream_chat(
     body:        ChatCompletionRequest,
 ) -> AsyncIterator[str]:
     """Yield SSE data: lines for streaming chat."""
+    from src.runnables.proxy_graph import ProxyInput, StreamChunk, ChunkType, proxy_runnable
+
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     created       = int(time.time())
-    model_id      = body.model
     include_usage = (body.stream_options or {}).get("include_usage", False)
-    request_id    = str(uuid.uuid4())
 
-    # ── 1. Auth + budget check ────────────────────────────────────────────────
-    from src.runnables.budget_auth import BudgetAuthInput, BudgetAuthRunnable
-    from src.runnables.budget_deduct import BudgetDeductInput, BudgetDeductRunnable
-    from src.runnables.model_resolve import ModelResolveInput, ModelResolveRunnable
-    from src.services.budget import BudgetError
-    from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+    stream = proxy_runnable.astream(ProxyInput(
+        raw_token=raw_token, abstraction=abstraction,
+        messages=messages, override_params=override,
+        ip_address=ip,
+    ))
 
-    auth = BudgetAuthRunnable()
-    auth_res = await auth.ainvoke(BudgetAuthInput(raw_token=raw_token, abstraction=abstraction))
-    if not auth_res.success:
-        yield _sse_error(auth_res.error_message or "Authentication failed")
+    # ── First chunk: setup or error ─────────────────────────────────────────
+    first = await anext(stream, None)
+    if first is None:
         yield "data: [DONE]\n\n"
         return
-    token = auth_res.access_token
 
-    # ── 2. Resolve model ──────────────────────────────────────────────────────
-    resolver = ModelResolveRunnable()
-    resolve_res = await resolver.ainvoke(ModelResolveInput(abstraction=abstraction, override_params=override))
-    if not resolve_res.success:
-        yield _sse_error(resolve_res.error_message or "Model resolution failed")
+    if first.type == ChunkType.ERROR:
+        yield _sse_error(first.error_message or "Unknown error")
         yield "data: [DONE]\n\n"
         return
-    model, mapping, key = resolve_res.model, resolve_res.mapping, resolve_res.provider_key
-    model_id = f"{mapping.provider}/{mapping.model_name}"
 
-    # ── 3. Prepare messages ───────────────────────────────────────────────────
-    lc: List[BaseMessage] = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        if isinstance(content, list):
-            content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
-        if role == "system":
-            lc.append(SystemMessage(content=content))
-        elif role == "assistant":
-            lc.append(AIMessage(content=content))
-        else:
-            lc.append(HumanMessage(content=content))
+    model_id = f"{first.model_provider}/{first.model_name}" if first.model_provider else body.model
 
-    # ── role chunk ────────────────────────────────────────────────────────────
+    # ── Role chunk ──────────────────────────────────────────────────────────
     yield _sse(ChatCompletionChunk(
         id=completion_id, created=created, model=model_id,
         choices=[StreamChoice(index=0, delta=DeltaMessage(role="assistant"), finish_reason=None)],
     ))
 
-    # ── 4. Stream ─────────────────────────────────────────────────────────────
-    t0 = time.monotonic()
-    full_text = ""
     prompt_tokens = 0
     completion_tokens = 0
 
-    try:
-        async for chunk in model.astream(lc):
-            text = chunk.content or ""
-            full_text += text
-            usage = getattr(chunk, "usage_metadata", None) or {}
-            if usage.get("input_tokens"):
-                prompt_tokens = usage["input_tokens"]
-                completion_tokens = usage.get("output_tokens", 0)
+    async for chunk in stream:
+        if chunk.type == ChunkType.CONTENT:
             yield _sse(ChatCompletionChunk(
                 id=completion_id, created=created, model=model_id,
-                choices=[StreamChoice(index=0, delta=DeltaMessage(content=text), finish_reason=None)],
+                choices=[StreamChoice(index=0, delta=DeltaMessage(content=chunk.text), finish_reason=None)],
             ))
-    except Exception as exc:
-        yield _sse_error(str(exc))
-        yield "data: [DONE]\n\n"
-        return
-    finally:
-        # ── 5. Record usage ───────────────────────────────────────────────────
-        latency = int((time.monotonic() - t0) * 1000)
-        if not prompt_tokens:
-            prompt_tokens = len(" ".join(m.get("content", "") for m in messages).split()) * 4 // 3
-            completion_tokens = len(full_text.split()) * 4 // 3
-        deduct = BudgetDeductRunnable()
-        await deduct.ainvoke(BudgetDeductInput(
-            token=token,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            provider_key_id=key.id,
-            abstraction=abstraction.value,
-            provider=mapping.provider,
-            model_name=mapping.model_name,
-            latency_ms=latency,
-            request_id=request_id,
-            ip_address=ip,
-            status=RequestStatus.SUCCESS,
-        ))
+        elif chunk.type == ChunkType.ERROR:
+            yield _sse_error(chunk.error_message or "Unexpected error")
+            yield "data: [DONE]\n\n"
+            return
+        elif chunk.type == ChunkType.DONE:
+            prompt_tokens     = chunk.prompt_tokens
+            completion_tokens = chunk.completion_tokens
 
-    # ── finish chunk ──────────────────────────────────────────────────────────
+    # ── Finish chunk ────────────────────────────────────────────────────────
     finish_chunk = ChatCompletionChunk(
         id=completion_id, created=created, model=model_id,
         choices=[StreamChoice(index=0, delta=DeltaMessage(), finish_reason="stop")],

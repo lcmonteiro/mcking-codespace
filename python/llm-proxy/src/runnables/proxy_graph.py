@@ -1,19 +1,20 @@
 """
 Proxy Pipeline — end-to-end LLM Proxy as a pure LangChain Runnable.
 
-Estrutura:
-  [preprocess]  →  [model.astream()]  →  [postprocess]
-     auth                    tokens           audit_log
-     resolve
-     prepare
-
-Non-streaming:   proxy_runnable.ainvoke(input)
-Streaming:       proxy_runnable.astream(input)  →  yields tokens natively
+Streaming:
+    async for chunk in proxy_runnable.astream(ProxyInput(...)):
+        if chunk.type == "content":
+            print(chunk.text)
+        elif chunk.type == "done":
+            print(f"Usage: {chunk.prompt_tokens} in / {chunk.completion_tokens} out")
+        elif chunk.type == "error":
+            print(f"Error: {chunk.error}")
 """
 from __future__ import annotations
 
 import time
 import uuid
+from enum import Enum
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from langchain_core.messages import (
@@ -54,12 +55,31 @@ class ProxyOutput(BaseModel):
     model_name:       Optional[str] = None
 
 
+class ChunkType(str, Enum):
+    SETUP   = "setup"
+    CONTENT = "content"
+    DONE    = "done"
+    ERROR   = "error"
+
+
+class StreamChunk(BaseModel):
+    """Chunk yielded by ProxyRunnable.astream()."""
+    type:             ChunkType = ChunkType.CONTENT
+    text:             str = ""
+    model_provider:   Optional[str] = None
+    model_name:       Optional[str] = None
+    prompt_tokens:    int = 0
+    completion_tokens: int = 0
+    total_tokens:     int = 0
+    request_id:       Optional[str] = None
+    error_message:    Optional[str] = None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Internal helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _prepare_messages(messages: List[Dict[str, str]]) -> List[BaseMessage]:
-    """Convert raw message dicts to LangChain message objects."""
     lc: List[BaseMessage] = []
     for msg in messages:
         role = msg.get("role", "user")
@@ -76,54 +96,38 @@ def _prepare_messages(messages: List[Dict[str, str]]) -> List[BaseMessage]:
 
 
 async def _setup(input: ProxyInput) -> tuple:
-    """
-    Pre-processing: authenticate token + resolve model + prepare messages.
-    Returns (token, model, mapping, key, lc_messages).
-    Raises BudgetError or ValueError on failure.
-    """
+    """Returns (request_id, token, model, mapping, key, lc_messages)."""
     request_id = str(uuid.uuid4())
-
-    # 1. Auth + budget check
     auth = BudgetAuthRunnable()
     auth_result = await auth.ainvoke(BudgetAuthInput(
-        raw_token=input.raw_token,
-        abstraction=input.abstraction,
+        raw_token=input.raw_token, abstraction=input.abstraction,
     ))
     if not auth_result.success:
-        raise BudgetError(
-            auth_result.error_message or "Authentication failed",
-            auth_result.status,
-        )
-    token = auth_result.access_token
+        raise BudgetError(auth_result.error_message or "Authentication failed", auth_result.status)
 
-    # 2. Resolve model
     resolver = ModelResolveRunnable()
     resolve_result = await resolver.ainvoke(ModelResolveInput(
-        abstraction=input.abstraction,
-        override_params=input.override_params,
+        abstraction=input.abstraction, override_params=input.override_params,
     ))
     if not resolve_result.success:
         raise ValueError(resolve_result.error_message or "Model resolution failed")
 
-    # 3. Prepare messages
-    lc_messages = _prepare_messages(input.messages)
-
-    return request_id, token, resolve_result.model, resolve_result.mapping, resolve_result.provider_key, lc_messages
+    return (
+        request_id,
+        auth_result.access_token,
+        resolve_result.model,
+        resolve_result.mapping,
+        resolve_result.provider_key,
+        _prepare_messages(input.messages),
+    )
 
 
 async def _record(
-    input: ProxyInput,
-    request_id: str,
-    token: Any,
-    key: Any,
-    mapping: Any,
-    prompt_tokens: int,
-    completion_tokens: int,
-    latency_ms: int,
+    input: ProxyInput, request_id: str, token: Any, key: Any, mapping: Any,
+    prompt_tokens: int, completion_tokens: int, latency_ms: int,
     status: RequestStatus = RequestStatus.SUCCESS,
     error_message: Optional[str] = None,
 ) -> None:
-    """Post-processing: persist audit log and deduct from budget."""
     deduct = BudgetDeductRunnable()
     await deduct.ainvoke(BudgetDeductInput(
         token=token,
@@ -142,20 +146,11 @@ async def _record(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ProxyRunnable — top-level Runnable (composable, streamable)
+# ProxyRunnable
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
-    """
-    End-to-end proxy pipeline como LangChain Runnable.
-
-    Non-streaming:
-        output = await proxy_runnable.ainvoke(ProxyInput(...))
-
-    Streaming (nativo — tokens do LLM um a um):
-        async for chunk in proxy_runnable.astream(ProxyInput(...)):
-            print(chunk)  # cada token do LLM
-    """
+    """End-to-end proxy pipeline as a LangChain Runnable."""
 
     async def ainvoke(
         self,
@@ -168,14 +163,12 @@ class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
         except BudgetError as exc:
             return ProxyOutput(
                 request_id=str(uuid.uuid4()),
-                status=exc.status,
-                error_message=str(exc),
+                status=exc.status, error_message=str(exc),
             )
         except ValueError as exc:
             return ProxyOutput(
                 request_id=str(uuid.uuid4()),
-                status=RequestStatus.ERROR,
-                error_message=str(exc),
+                status=RequestStatus.ERROR, error_message=str(exc),
             )
 
         t0 = time.monotonic()
@@ -185,9 +178,7 @@ class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
             usage = getattr(response, "usage_metadata", None) or {}
             prompt_t = usage.get("input_tokens", 0)
             comp_t = usage.get("output_tokens", 0)
-
             await _record(input, request_id, token, key, mapping, prompt_t, comp_t, latency)
-
             return ProxyOutput(
                 request_id=request_id,
                 response_text=response.content,
@@ -202,16 +193,11 @@ class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
         except Exception as exc:
             latency = int((time.monotonic() - t0) * 1000)
             prompt_t = len(" ".join(m.get("content", "") for m in input.messages).split()) * 4 // 3
-            await _record(
-                input, request_id, token, key, mapping,
-                prompt_t, 0, latency,
-                status=RequestStatus.ERROR, error_message=str(exc),
-            )
+            await _record(input, request_id, token, key, mapping, prompt_t, 0, latency,
+                          status=RequestStatus.ERROR, error_message=str(exc))
             return ProxyOutput(
-                request_id=request_id,
-                status=RequestStatus.ERROR,
-                error_message=str(exc),
-                latency_ms=latency,
+                request_id=request_id, status=RequestStatus.ERROR,
+                error_message=str(exc), latency_ms=latency,
             )
 
     async def astream(
@@ -219,37 +205,38 @@ class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
         input: ProxyInput,
         config: Optional[RunnableConfig] = None,
         **kwargs: Any,
-    ) -> AsyncIterator[ProxyOutput]:
+    ) -> AsyncIterator[StreamChunk]:
         """
-        Stream de tokens do LLM. Cada iteração devolve um chunk de texto.
+        Stream tokens with rich metadata.
 
-        Exemplo:
-            full = ""
-            async for chunk in proxy_runnable.astream(ProxyInput(...)):
-                print(chunk, end="", flush=True)
-                full += chunk
+        Yields:
+          StreamChunk(type="setup")   — model info before streaming starts
+          StreamChunk(type="content") — individual token chunks
+          StreamChunk(type="done")    — final, with usage
+          StreamChunk(type="error")   — on failure
         """
         try:
             request_id, token, model, mapping, key, lc = await _setup(input)
         except BudgetError as exc:
-            yield ProxyOutput(
-                request_id=str(uuid.uuid4()),
-                status=exc.status,
-                error_message=str(exc),
-            )
+            yield StreamChunk(type=ChunkType.ERROR, error_message=str(exc))
             return
         except ValueError as exc:
-            yield ProxyOutput(
-                request_id=str(uuid.uuid4()),
-                status=RequestStatus.ERROR,
-                error_message=str(exc),
-            )
+            yield StreamChunk(type=ChunkType.ERROR, error_message=str(exc))
             return
+
+        # ── Setup: model info ─────────────────────────────────────────────────
+        yield StreamChunk(
+            type=ChunkType.SETUP,
+            model_provider=mapping.provider,
+            model_name=mapping.model_name,
+            request_id=request_id,
+        )
 
         t0 = time.monotonic()
         full_text = ""
         prompt_tokens = 0
         completion_tokens = 0
+        recorded = False
 
         try:
             async for chunk in model.astream(lc):
@@ -259,31 +246,47 @@ class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
                 if usage.get("input_tokens"):
                     prompt_tokens = usage["input_tokens"]
                     completion_tokens = usage.get("output_tokens", 0)
-                yield text
-        finally:
+                yield StreamChunk(type=ChunkType.CONTENT, text=text)
+        except Exception as exc:
             latency = int((time.monotonic() - t0) * 1000)
-            if not prompt_tokens:
-                prompt_tokens = len(" ".join(m.get("content", "") for m in input.messages).split()) * 4 // 3
-                completion_tokens = len(full_text.split()) * 4 // 3
+            await _record(input, request_id, token, key, mapping,
+                          prompt_tokens or len(full_text.split()) * 4 // 3,
+                          completion_tokens or 0, latency,
+                          status=RequestStatus.ERROR, error_message=str(exc))
+            recorded = True
+            yield StreamChunk(type=ChunkType.ERROR, error_message=str(exc))
+            return
+        finally:
+            if not recorded and full_text:
+                latency = int((time.monotonic() - t0) * 1000)
+                if not prompt_tokens:
+                    prompt_tokens = len(" ".join(m.get("content", "") for m in input.messages).split()) * 4 // 3
+                    completion_tokens = len(full_text.split()) * 4 // 3
+                await _record(input, request_id, token, key, mapping,
+                              prompt_tokens, completion_tokens, latency)
 
-            await _record(input, request_id, token, key, mapping, prompt_tokens, completion_tokens, latency)
+        # ── Done ──────────────────────────────────────────────────────────────
+        yield StreamChunk(
+            type=ChunkType.DONE,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            request_id=request_id,
+            model_provider=mapping.provider,
+            model_name=mapping.model_name,
+        )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Singleton for direct use
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# Singleton
 proxy_runnable = ProxyRunnable()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Compat entry points
-# ═══════════════════════════════════════════════════════════════════════════════
+# Convenience entry points
 
 async def run_proxy(*args, **kwargs) -> ProxyOutput:
-    return await proxy_runnable.ainvoke(ProxyInput(**kwargs) if not isinstance(kwargs.get("raw_token"), str) else ProxyInput(**kwargs))
+    return await proxy_runnable.ainvoke(ProxyInput(**kwargs))
 
 
-async def run_proxy_stream(*args, **kwargs) -> AsyncIterator[str]:
+async def run_proxy_stream(*args, **kwargs) -> AsyncIterator[StreamChunk]:
     async for chunk in proxy_runnable.astream(ProxyInput(**kwargs)):
         yield chunk
