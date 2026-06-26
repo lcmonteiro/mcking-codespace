@@ -295,6 +295,32 @@ class Grid:
 
 # ─── Main loop ─────────────────────────────────────────────────────────
 
+def run_batch(generations: int = 100):
+    """Run simulation in headless batch mode, print stats at the end."""
+    tw, th = get_terminal_size()
+    grid_w = min(tw, 100)
+    grid_h = min(th - 3, 40)
+    if grid_w < 20 or grid_h < 20:
+        grid_w, grid_h = 60, 25
+
+    grid = Grid(grid_w, grid_h)
+    grid.randomize(0.25)
+    rule = RULES[0]
+
+    start = time.time()
+    for g in range(generations):
+        grid.step(rule)
+    elapsed = time.time() - start
+
+    live = sum(grid.cells)
+    print(f"🌀 Cellular Automata — Batch Run")
+    print(f"  Rule: {rule.name}")
+    print(f"  Grid: {grid_w}x{grid_h}")
+    print(f"  Generations: {generations}")
+    print(f"  Time: {elapsed:.3f}s ({generations/elapsed:.0f} gen/s)")
+    print(f"  Alive: {live}/{grid_w*grid_h} ({100*live/(grid_w*grid_h):.1f}%)")
+
+
 def main():
     hide_cursor()
 
@@ -441,4 +467,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="Cellular Automata Playground")
+    parser.add_argument("--batch", type=int, nargs="?", const=200, default=None,
+                        help="Run N generations in headless batch mode (default: 200)")
+    args = parser.parse_args()
+    if args.batch is not None:
+        run_batch(args.batch)
+    else:
+        main()
