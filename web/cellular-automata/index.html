@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌀 Cellular Automata Playground</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a12;
+    color: #ccc;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container {
+    max-width: 900px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  header h1 { font-size: 1.3rem; color: #8bf; letter-spacing: -0.5px; }
+  header h1 span { color: #888; }
+
+  .canvas-wrap {
+    background: #111;
+    border: 1px solid #222;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    aspect-ratio: 2 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .canvas-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    cursor: crosshair;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .controls button, .controls select {
+    background: #1a1a28;
+    border: 1px solid #333;
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 5px;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: background .15s;
+    font-family: inherit;
+  }
+  .controls button:hover { background: #2a2a3e; }
+  .controls button:active { background: #333; }
+  .controls button.active { background: #1f4; color: #000; border-color: #1f4; }
+  .controls label { color: #888; font-size: .8rem; display: flex; align-items: center; gap: 6px; }
+  .controls input[type=range] { width: 80px; accent-color: #4af; }
+  .controls .sep { width: 1px; height: 24px; background: #333; margin: 0 4px; }
+  .stats { color: #666; font-size: .78rem; display: flex; gap: 16px; flex-wrap: wrap; }
+  .stats span { white-space: nowrap; }
+  .stats b { color: #aaa; }
+
+  footer { margin-top: 8px; text-align: center; color: #444; font-size: .75rem; }
+  footer a { color: #568; text-decoration: none; }
+  footer a:hover { color: #8bf; }
+
+  @media (max-width: 600px) {
+    body { padding: 10px; }
+    .controls button { padding: 5px 10px; font-size: .78rem; }
+    header h1 { font-size: 1.05rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>🌀 Cellular <span>Automata</span></h1>
+  <div class="stats" id="stats">
+    <span>⚙️ <b id="ruleName">Conway's Life</b></span>
+    <span>⏱ gen <b id="genCount">0</b></span>
+    <span>🧬 <b id="liveCount">0</b> alive</span>
+    <span>📐 <b id="gridSize">0×0</b></span>
+  </div>
+</header>
+
+<div class="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div class="controls">
+  <button id="btnPlay" class="active">⏸ Pause</button>
+  <button id="btnStep">⏭ Step</button>
+  <div class="sep"></div>
+  <button id="btnRandom">🎲 Rand</button>
+  <button id="btnClear">🗑 Clear</button>
+  <div class="sep"></div>
+  <label>⚡ <input type="range" id="speedSlider" min="1" max="60" value="15"></label>
+  <div class="sep"></div>
+  <label>Rule <select id="ruleSelect">
+    <option value="0">Conway's Life</option>
+    <option value="1">HighLife</option>
+    <option value="2">Seeds</option>
+    <option value="3">Brian's Brain</option>
+    <option value="4">Day & Night</option>
+    <option value="5">Wireworld</option>
+  </select></label>
+  <div class="sep"></div>
+  <label>Brush <select id="brushSelect">
+    <option value="1">Draw</option>
+    <option value="0">Erase</option>
+  </select></label>
+</div>
+
+<footer>
+  <a href="https://github.com/lcmonteiro/mcking-codespace" target="_blank">mcking-codespace</a> — autómatos celulares no browser 🌀
+</footer>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---- Rulesets ----
+  const RULES = [
+    { name: "Conway's Life", survive: [2,3], birth: [3], colors: [null, '#d4d47a'] },
+    { name: "HighLife",      survive: [2,3], birth: [3,6], colors: [null, '#7ad47a'] },
+    { name: "Seeds",         survive: [],    birth: [2], colors: [null, '#d47a7a'] },
+    { name: "Brian's Brain", survive: [],    birth: [2], special: 'brians', colors: [null, '#ffd060'] },
+    { name: "Day & Night",   survive: [3,4,6,7,8], birth: [3,6,7,8], colors: [null, '#7ac4d4'] },
+    { name: "Wireworld",     survive: [],    birth: [], special: 'wireworld',
+      colors: [null, null, null, null] },
+  ];
+
+  // Wireworld colors
+  const WW_COLORS = ['#0a0a14', '#ffcc60', '#c86432', '#6488ff'];
+
+  // ---- Canvas & Grid ----
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, CELL;
+
+  let grid = [];
+  let wwGrid = [];      // wireworld extra state
+  let generation = 0;
+  let running = true;
+  let ruleIdx = 0;
+  let frameInterval = 60; // ms, derived from slider
+
+  // Mouse state
+  let mouseDown = false;
+  let brush = 1;
+
+  // ---- DOM refs ----
+  const $ = id => document.getElementById(id);
+  const ruleNameEl = $('ruleName');
+  const genCountEl = $('genCount');
+  const liveCountEl = $('liveCount');
+  const gridSizeEl = $('gridSize');
+
+  // ---- Resize ----
+  function resize() {
+    const wrap = canvas.parentElement;
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    // Fixed grid dimensions based on container
+    let cols, rows;
+    if (rect.width > 600) {
+      cols = 120; rows = 60;
+    } else {
+      cols = 80; rows = 40;
+    }
+    CELL = Math.floor(rect.width / cols);
+    if (CELL < 2) CELL = 2;
+    const dispW = CELL * cols;
+    const dispH = CELL * rows;
+    canvas.width = dispW * dpr;
+    canvas.height = dispH * dpr;
+    canvas.style.width = dispW + 'px';
+    canvas.style.height = dispH + 'px';
+    ctx.scale(dpr, dpr);
+
+    if (W !== cols || H !== rows) {
+      W = cols; H = rows;
+      resetGrid();
+    }
+    gridSizeEl.textContent = `${W}×${H}`;
+    render();
+  }
+
+  // ---- Grid helpers ----
+  function resetGrid() {
+    grid = new Uint8Array(W * H);
+    wwGrid = new Uint8Array(W * H);
+    generation = 0;
+    randomize(0.2);
+    render();
+  }
+
+  function idx(x, y) { return y * W + x; }
+
+  function get(x, y) {
+    if (x < 0 || x >= W || y < 0 || y >= H) return 0;
+    return grid[idx(x,y)];
+  }
+
+  function set(x, y, v) {
+    if (x >= 0 && x < W && y >= 0 && y < H) grid[idx(x,y)] = v;
+  }
+
+  function getWW(x, y) {
+    if (x < 0 || x >= W || y < 0 || y >= H) return 0;
+    return wwGrid[idx(x,y)];
+  }
+
+  function setWW(x, y, v) {
+    if (x >= 0 && x < W && y >= 0 && y < H) wwGrid[idx(x,y)] = v;
+  }
+
+  function countN(x, y) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++)
+        if (dx || dy) n += get(x+dx, y+dy);
+    return n;
+  }
+
+  function countWWHead(x, y) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++)
+        if (dx || dy && getWW(x+dx, y+dy) === 1) n++;
+    return n;
+  }
+
+  function randomize(density) {
+    for (let i = 0; i < W*H; i++) {
+      grid[i] = Math.random() < density ? 1 : 0;
+      wwGrid[i] = grid[i] ? 3 : 0; // for wireworld
+    }
+    generation = 0;
+  }
+
+  function clearAll() {
+    grid.fill(0);
+    wwGrid.fill(0);
+    generation = 0;
+  }
+
+  // ---- Step ----
+  function step() {
+    const rule = RULES[ruleIdx];
+    if (rule.special === 'wireworld') return stepWireworld();
+    if (rule.special === 'brians') return stepBriansBrain();
+
+    const survive = rule.survive;
+    const birth = rule.birth;
+    const newGrid = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const alive = get(x, y);
+        const n = countN(x, y);
+        const val = alive
+          ? (survive.includes(n) ? 1 : 0)
+          : (birth.includes(n) ? 1 : 0);
+        newGrid[idx(x,y)] = val;
+      }
+    }
+    grid = newGrid;
+    generation++;
+  }
+
+  function stepWireworld() {
+    const newWW = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = idx(x, y);
+        const s = wwGrid[i];
+        if (s === 1) newWW[i] = 2;          // head→tail
+        else if (s === 2) newWW[i] = 3;     // tail→conductor
+        else if (s === 3) {                  // conductor
+          const heads = countWWHead(x, y);
+          newWW[i] = (heads === 1 || heads === 2) ? 1 : 3;
+        }
+        // 0 stays 0
+      }
+    }
+    wwGrid = newWW;
+    // sync display grid
+    for (let i = 0; i < W*H; i++) grid[i] = wwGrid[i] ? 1 : 0;
+    generation++;
+  }
+
+  function stepBriansBrain() {
+    const newGrid = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = idx(x, y);
+        const s = grid[i];
+        const n = countN(x, y);
+        if (s === 0 && n === 2) newGrid[i] = 1;   // firing
+        else if (s === 1) newGrid[i] = 2;          // refractory
+        else if (s === 2) newGrid[i] = 0;          // rest
+      }
+    }
+    grid = newGrid;
+    generation++;
+  }
+
+  // ---- Render ----
+  function render() {
+    const rule = RULES[ruleIdx];
+    const sz = CELL;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, W*sz, H*sz);
+
+    if (rule.special === 'wireworld') {
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const s = getWW(x, y);
+          if (s) {
+            ctx.fillStyle = WW_COLORS[s] || '#666';
+            ctx.fillRect(x*sz, y*sz, sz, sz);
+          }
+        }
+      }
+    } else if (rule.special === 'brians') {
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const s = grid[idx(x,y)];
+          if (s === 1) ctx.fillStyle = '#ffd060';      // firing
+          else if (s === 2) ctx.fillStyle = '#503078';  // refractory
+          else continue;
+          ctx.fillRect(x*sz, y*sz, sz, sz);
+        }
+      }
+    } else {
+      const aliveColor = rule.colors[1];
+      ctx.fillStyle = aliveColor;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          if (grid[idx(x,y)]) {
+            ctx.fillRect(x*sz, y*sz, sz, sz);
+          }
+        }
+      }
+    }
+
+    // Grid lines (subtle, only when cells are small)
+    if (sz >= 6) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= W; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x*sz, 0); ctx.lineTo(x*sz, H*sz);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= H; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y*sz); ctx.lineTo(W*sz, y*sz);
+        ctx.stroke();
+      }
+    }
+
+    // Update stats
+    const live = grid.reduce((a,b) => a + b, 0);
+    genCountEl.textContent = generation;
+    liveCountEl.textContent = live;
+  }
+
+  // ---- Loop ----
+  let lastTime = 0;
+  let rafId = null;
+
+  function loop(time) {
+    if (running && time - lastTime >= frameInterval) {
+      step();
+      render();
+      lastTime = time;
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  // ---- Mouse / Touch ----
+  function getGridPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) / rect.width * W | 0;
+    const sy = (e.clientY - rect.top) / rect.height * H | 0;
+    return [Math.min(Math.max(sx, 0), W-1), Math.min(Math.max(sy, 0), H-1)];
+  }
+
+  function paint(e) {
+    const [gx, gy] = getGridPos(e);
+    if (RULES[ruleIdx].special === 'wireworld') {
+      const cur = getWW(gx, gy);
+      setWW(gx, gy, brush ? (cur !== 3 ? 3 : 0) : 0);
+      set(gx, gy, brush ? (cur !== 3 ? 1 : 0) : 0);
+    } else if (RULES[ruleIdx].special === 'brians') {
+      set(gx, gy, brush ? 1 : 0);
+    } else {
+      set(gx, gy, brush);
+    }
+    render();
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    mouseDown = true;
+    paint(e);
+  });
+  canvas.addEventListener('mousemove', e => { if (mouseDown) paint(e); });
+  canvas.addEventListener('mouseup',   () => { mouseDown = false; });
+  canvas.addEventListener('mouseleave', () => { mouseDown = false; });
+
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    paint({ clientX: t.clientX, clientY: t.clientY });
+  });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    if (t) paint({ clientX: t.clientX, clientY: t.clientY });
+  });
+  canvas.addEventListener('touchend', () => {});
+
+  // ---- UI Bindings ----
+  $('btnPlay').addEventListener('click', () => {
+    running = !running;
+    $('btnPlay').textContent = running ? '⏸ Pause' : '▶ Play';
+    $('btnPlay').classList.toggle('active', running);
+  });
+
+  $('btnStep').addEventListener('click', () => {
+    step();
+    render();
+  });
+
+  $('btnRandom').addEventListener('click', () => {
+    randomize(0.2);
+    render();
+  });
+
+  $('btnClear').addEventListener('click', () => {
+    clearAll();
+    render();
+  });
+
+  $('speedSlider').addEventListener('input', function() {
+    // 1 fps -> 60 fps maps to 1000ms -> ~16ms
+    const fps = parseInt(this.value);
+    frameInterval = Math.round(1000 / fps);
+  });
+
+  $('ruleSelect').addEventListener('change', function() {
+    ruleIdx = parseInt(this.value);
+    ruleNameEl.textContent = RULES[ruleIdx].name;
+    if (RULES[ruleIdx].special === 'wireworld') randomize(0.15);
+    render();
+  });
+
+  $('brushSelect').addEventListener('change', function() {
+    brush = parseInt(this.value);
+  });
+
+  // ---- Keyboard ----
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ') { e.preventDefault(); $('btnPlay').click(); }
+    if (e.key === 'r' || e.key === 'R') $('btnRandom').click();
+    if (e.key === 'c' || e.key === 'C') $('btnClear').click();
+    if (e.key === 'Enter') $('btnStep').click();
+  });
+
+  // ---- Init ----
+  window.addEventListener('resize', resize);
+  resize();
+  lastTime = performance.now();
+  loop(lastTime);
+  ruleNameEl.textContent = RULES[0].name;
+  $('speedSlider').dispatchEvent(new Event('input'));
+})();
+</script>
+</body>
+</html>
