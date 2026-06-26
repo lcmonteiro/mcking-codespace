@@ -55,3 +55,4 @@ scripts/   — Build scripts, helpers
 
 - `python/nocturne.py` — paisagem nocturna animada no terminal (estrelas, lua, estrelas cadentes, pirilampos)
 - `python/mandelbrot.py` — explorador interativo do Mandelbrot set (pan, zoom, 8 paletas, smooth coloring)
+- `python/cellular_automata.py` — playground de autómatos celulares com 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
