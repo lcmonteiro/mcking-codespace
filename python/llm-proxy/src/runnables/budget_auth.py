@@ -18,7 +18,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import AccessToken, BudgetType, ModelAbstraction, RequestStatus, TokenStatus
-from src.db.session import AsyncSessionLocal
+from src.db.session import db_contex
 from src.services.budget import BudgetError, _hash_token, _period_delta
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ class BudgetAuthRunnable(Runnable[BudgetAuthInput, BudgetAuthOutput]):
     ) -> BudgetAuthOutput:
         token_hash = _hash_token(input.raw_token)
 
-        async with AsyncSessionLocal() as db:
+        async with db_contex() as db:
             result = await db.execute(
                 select(AccessToken).where(AccessToken.token_hash == token_hash)
             )

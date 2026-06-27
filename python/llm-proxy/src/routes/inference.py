@@ -24,7 +24,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.db.models import ModelAbstraction, RequestStatus
-from src.db.session import AsyncSessionLocal
+from src.db.session import db_contex
 from src.middleware.auth import extract_bearer_token
 from src.services.model_registry import ModelRegistry
 from src.runnables.proxy_graph import run_proxy, run_proxy_stream
@@ -80,7 +80,7 @@ async def list_models(
     Returns:
         A ModelList containing one ModelObject per registered abstraction.
     """
-    async with AsyncSessionLocal() as db:
+    async with db_contex() as db:
         registry = ModelRegistry(db)
         abstractions = await registry.list_abstractions()
 
@@ -113,7 +113,7 @@ async def retrieve_model(
     Raises:
         HTTPException: 404 if the model does not exist.
     """
-    async with AsyncSessionLocal() as db:
+    async with db_contex() as db:
         registry = ModelRegistry(db)
         abstractions = await registry.list_abstractions()
 
@@ -652,13 +652,13 @@ async def create_embeddings(
     Returns:
         An EmbeddingResponse matching the OpenAI format.
     """
-    from src.db.session import AsyncSessionLocal
+    from src.db.session import db_contex
     from src.services.budget import BudgetError, BudgetService
     from src.services.model_registry import ModelRegistry
 
     abstraction = ModelAbstraction.EMBEDDING
 
-    async with AsyncSessionLocal() as db:
+    async with db_contex() as db:
         budget_svc = BudgetService(db)
         try:
             token = await budget_svc.authenticate(raw_token, abstraction)

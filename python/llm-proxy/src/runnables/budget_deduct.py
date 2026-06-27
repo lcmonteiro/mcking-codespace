@@ -17,7 +17,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import AccessToken, BudgetType, RequestStatus, TokenStatus, UsageLog
-from src.db.session import AsyncSessionLocal
+from src.db.session import db_contex
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ class BudgetDeductRunnable(Runnable[BudgetDeductInput, dict]):
         config   : Optional[RunnableConfig] = None,
         **kwargs : Any,
     ) -> dict:
-        async with AsyncSessionLocal() as db:
+        async with db_contex() as db:
             total = input.prompt_tokens + input.completion_tokens
 
             # Update access token counters

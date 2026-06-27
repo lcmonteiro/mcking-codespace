@@ -22,7 +22,7 @@ from typing import List
 import yaml
 
 from src.db.models import BudgetType, ModelAbstraction, ModelMapping, ProviderKey
-from src.db.session import AsyncSessionLocal, init_db
+from src.db.session import db_contex, db_init
 from src.services.budget import BudgetService
 
 logger = logging.getLogger(__name__)
@@ -107,9 +107,9 @@ async def seed() -> None:
                 local_provider_path if local_provider_path.exists() else provider_path)
 
     logger.info("Initialising database\u2026")
-    await init_db()
+    await db_init()
 
-    async with AsyncSessionLocal() as db:
+    async with db_contex() as db:
         # ── Model mappings ─────────────────────────────────────────────────────────────────────────
         logger.info("Seeding model mappings\u2026")
         for abstraction, provider, model_name, priority in MAPPINGS:

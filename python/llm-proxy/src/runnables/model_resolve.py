@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from src.db.models import ModelAbstraction, ModelMapping, ProviderKey
-from src.db.session import AsyncSessionLocal
+from src.db.session import db_contex
 from config.settings import settings
 from src.services.model_registry import _PROVIDER_CLASSES, _RoundRobinPool, _api_key_param
 
@@ -81,7 +81,7 @@ class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
         config   : Optional[RunnableConfig] = None,
         **kwargs : Any,
     ) -> ModelResolveOutput:
-        async with AsyncSessionLocal() as db:
+        async with db_contex() as db:
             # 1. Best mapping
             result = await db.execute(
                 select(ModelMapping)

@@ -24,7 +24,7 @@ from src.db.models import (
     TokenStatus,
     UsageLog,
 )
-from src.db.session import get_db
+from src.db.session import db_get
 from src.middleware.auth import require_admin
 from src.services.budget import BudgetService
 
@@ -73,7 +73,7 @@ class TokenResponse(BaseModel):
 @router.post("/tokens", status_code=status.HTTP_201_CREATED)
 async def create_token(
     body: CreateTokenRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Create a new access token.
@@ -114,7 +114,7 @@ async def create_token(
 @router.get("/tokens", response_model=List[TokenResponse])
 async def list_tokens(
     owner: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> List[TokenResponse]:
     """
     List access tokens, optionally filtered by owner.
@@ -137,7 +137,7 @@ async def list_tokens(
 @router.get("/tokens/{token_id}", response_model=TokenResponse)
 async def get_token(
     token_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> TokenResponse:
     """
     Retrieve a single access token by ID.
@@ -161,7 +161,7 @@ async def get_token(
 @router.patch("/tokens/{token_id}/revoke")
 async def revoke_token(
     token_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Revoke an access token.
@@ -184,7 +184,7 @@ async def revoke_token(
 async def update_budget(
     token_id: str,
     token_budget: int = Query(..., gt=0),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Update the token budget for an access token.
@@ -226,7 +226,7 @@ class CreateProviderKeyRequest(BaseModel):
 @router.post("/provider-keys", status_code=status.HTTP_201_CREATED)
 async def create_provider_key(
     body: CreateProviderKeyRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Register a new provider API key.
@@ -260,7 +260,7 @@ async def create_provider_key(
 @router.get("/provider-keys")
 async def list_provider_keys(
     provider: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> List[Dict[str, Any]]:
     """
     List registered provider keys, optionally filtered by provider name.
@@ -297,7 +297,7 @@ async def list_provider_keys(
 @router.patch("/provider-keys/{key_id}/toggle")
 async def toggle_provider_key(
     key_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Toggle the active status of a provider key.
@@ -319,7 +319,7 @@ async def toggle_provider_key(
 @router.delete("/provider-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_provider_key(
     key_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> None:
     """
     Delete a provider key.
@@ -353,7 +353,7 @@ class CreateMappingRequest(BaseModel):
 @router.post("/model-mappings", status_code=status.HTTP_201_CREATED)
 async def create_model_mapping(
     body: CreateMappingRequest,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Create a new abstraction-to-model mapping.
@@ -387,7 +387,7 @@ async def create_model_mapping(
 
 @router.get("/model-mappings")
 async def list_model_mappings(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> List[Dict[str, Any]]:
     """
     List all model mappings ordered by abstraction and priority.
@@ -423,7 +423,7 @@ async def list_model_mappings(
 @router.patch("/model-mappings/{mapping_id}/toggle")
 async def toggle_mapping(
     mapping_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Toggle the active status of a model mapping.
@@ -445,7 +445,7 @@ async def toggle_mapping(
 @router.delete("/model-mappings/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_mapping(
     mapping_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> None:
     """
     Delete a model mapping.
@@ -471,7 +471,7 @@ async def get_usage(
     provider    : Optional[str] = None,
     abstraction : Optional[str] = None,
     limit       : int           = Query(50, le=500),
-    db          : AsyncSession  = Depends(get_db),
+    db          : AsyncSession  = Depends(db_get),
 ) -> List[Dict[str, Any]]:
     """
     Query the usage / audit log with optional filters.
@@ -515,7 +515,7 @@ async def get_usage(
 
 @router.get("/usage/stats")
 async def usage_stats(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(db_get),
 ) -> Dict[str, Any]:
     """
     Aggregate token usage per abstraction and provider.

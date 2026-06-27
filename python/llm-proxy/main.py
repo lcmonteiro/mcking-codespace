@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from src.db.session import init_db
+from src.db.session import db_init
 from src.routes.admin import router as admin_router
 from src.routes.inference import router as inference_router
 
@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> None:
         app: The FastAPI application instance.
     """
     logger.info("Starting LLM Proxy", version=settings.APP_VERSION)
-    await init_db()
+    await db_init()
     yield
     logger.info("Shutting down LLM Proxy")
 
