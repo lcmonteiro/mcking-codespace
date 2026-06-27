@@ -214,6 +214,22 @@ async def _record(
 class ProxyRunnable(Runnable[ProxyInput, ProxyOutput]):
     """End-to-end proxy pipeline as a LangChain Runnable."""
 
+    def invoke(
+        self,
+        input : ProxyInput,
+        config: Optional[RunnableConfig] = None,
+        **kwargs: Any,
+    ) -> ProxyOutput:
+        """
+        Synchronous invoke is not supported — use ``ainvoke()`` instead.
+
+        Raises:
+            NotImplementedError: Always, because this proxy is async-only.
+        """
+        raise NotImplementedError(
+            "ProxyRunnable is async-only; use await proxy_runnable.ainvoke(...)"
+        )
+
     async def ainvoke(
         self,
         input : ProxyInput,
