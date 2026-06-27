@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 lifelike.py — Artificial Life Simulator 🌱🧬
-=============================================
+==============================================
 Evolutionary cellular automata in the terminal.
 Conway's Game of Life + custom rules + species + gliders.
 
@@ -20,62 +20,83 @@ Controls:
   Enter : next rule set
 """
 
-import sys
 import io
-import time
+import logging
+import math
 import os
 import random
-import math
 import shutil
-from enum import Enum, auto
+import sys
+import time
 from dataclasses import dataclass, field
-from typing import List, Tuple, Set, Optional
+from enum import Enum, auto
+from typing import Dict, List, Optional, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-# ── ANSI Helpers ──────────────────────────────────────────────────────────
+# ====================================================================================================
+# ANSI Helpers
+# ====================================================================================================
 
-def csi(*seq):
+
+def csi(*seq: int) -> str:
+    """Return CSI escape sequence."""
     return f"\033[{';'.join(str(s) for s in seq)}m"
 
-def rgb(r, g, b):
+
+def rgb(r: int, g: int, b: int) -> str:
+    """ANSI truecolor foreground."""
     return csi(38, 2, r, g, b)
 
-def bg_rgb(r, g, b):
+
+def bg_rgb(r: int, g: int, b: int) -> str:
+    """ANSI truecolor background."""
     return csi(48, 2, r, g, b)
 
-SAVE = csi()
-HOME = "\033[H"
-HIDE = "\033[?25l"
-SHOW = "\033[?25h"
-CLEAR = "\033[2J"
 
-# ── Rule Definitions ──────────────────────────────────────────────────────
+SAVE  : str = csi()
+HOME  : str = "\033[H"
+HIDE  : str = "\033[?25l"
+SHOW  : str = "\033[?25h"
+CLEAR : str = "\033[2J"
+
+
+# ====================================================================================================
+# Rule Definitions
+# ====================================================================================================
+
 
 @dataclass
 class Rule:
-    name: str
-    survive: Set[int]      # neighbour counts for survival
-    birth: Set[int]        # neighbour counts for birth
-    description: str = ""
+    """A cellular automaton rule set."""
+    name : str
+    survive : Set[int]     # neighbour counts for survival
+    birth : Set[int]       # neighbour counts for birth
+    description : str = ""
 
-RULES = [
+
+RULES: List[Rule] = [
     Rule("Conway", {2, 3}, {3}, "Classic Game of Life"),
     Rule("HighLife", {2, 3}, {3, 6}, "Like Conway but 6 makes birth"),
     Rule("Seeds", set(), {2}, "Birth only — cells die next frame"),
-    Rule("Life Without Death", {0, 1, 2, 3, 4, 5, 6, 7, 8}, {3}, "Cells never die, only born"),
+    Rule("Life Without Death", set(range(9)), {3}, "Cells never die, only born"),
     Rule("Day & Night", {3, 4, 6, 7, 8}, {3, 6, 7, 8}, "Symmetric day/night pattern"),
     Rule("Maze", {1, 2, 3, 4, 5}, {3}, "Grows maze-like structures"),
     Rule("Coral", {2, 3, 5, 6, 7}, {4, 5, 7, 8}, "Seashell coral growth"),
-    Rule("Anneal", {0, 1, 2, 3, 4, 5, 6, 7, 8}, {4, 6, 7, 8}, "Fills with chaotic patterns"),
+    Rule("Anneal", set(range(9)), {4, 6, 7, 8}, "Fills with chaotic patterns"),
     Rule("Assimilation", {4, 5, 6, 7}, {3, 4, 5}, "Cells spread and assimilate"),
     Rule("2x2", {1, 2, 5}, {3, 6}, "Replicator-friendly"),
 ]
 
-# ── Glider Patterns ───────────────────────────────────────────────────────
 
-GLIDER_GUN = """\
+# ====================================================================================================
+# Glider Patterns
+# ====================================================================================================
+
+GLIDER_GUN: str = """\
 .....................................
 **...............................**.
 *.*.............................**.
@@ -95,7 +116,7 @@ GLIDER_GUN = """\
 .....................................
 """
 
-PULSAR = """\
+PULSAR: str = """\
 ...............
 .....###.......
 ...............
@@ -113,8 +134,10 @@ PULSAR = """\
 ...............
 """
 
+
 def parse_pattern(pattern: str, offset_x: int, offset_y: int) -> Set[Tuple[int, int]]:
-    cells = set()
+    """Parse an ASCII pattern and return a set of (x, y) live cells."""
+    cells: Set[Tuple[int, int]] = set()
     for y, line in enumerate(pattern.strip("\n").split("\n")):
         for x, ch in enumerate(line):
             if ch == '*':
@@ -122,55 +145,67 @@ def parse_pattern(pattern: str, offset_x: int, offset_y: int) -> Set[Tuple[int, 
     return cells
 
 
-# ── Colour Palettes ───────────────────────────────────────────────────────
+# ====================================================================================================
+# Colour Palettes
+# ====================================================================================================
 
-PALETTES = {
+PALETTES: Dict[str, List[Tuple[int, int, int]]] = {
     "viridis": [
         (68, 1, 84), (59, 82, 139), (33, 145, 140),
-        (94, 201, 98), (158, 218, 57), (253, 231, 37)
+        (94, 201, 98), (158, 218, 57), (253, 231, 37),
     ],
     "plasma": [
         (13, 8, 135), (126, 3, 168), (204, 71, 120),
-        (248, 149, 64), (255, 215, 0), (240, 249, 33)
+        (248, 149, 64), (255, 215, 0), (240, 249, 33),
     ],
     "fire": [
         (80, 0, 0), (180, 30, 0), (255, 80, 0),
-        (255, 160, 0), (255, 220, 80), (255, 255, 200)
+        (255, 160, 0), (255, 220, 80), (255, 255, 200),
     ],
     "ocean": [
         (0, 10, 50), (0, 50, 120), (0, 100, 180),
-        (0, 150, 200), (100, 200, 220), (180, 240, 255)
+        (0, 150, 200), (100, 200, 220), (180, 240, 255),
     ],
     "matrix": [
         (0, 50, 0), (0, 80, 0), (0, 120, 0),
-        (0, 180, 0), (100, 220, 100), (200, 255, 200)
+        (0, 180, 0), (100, 220, 100), (200, 255, 200),
     ],
     "neon": [
         (255, 0, 128), (255, 128, 0), (255, 255, 0),
-        (0, 255, 128), (0, 128, 255), (128, 0, 255)
+        (0, 255, 128), (0, 128, 255), (128, 0, 255),
     ],
 }
 
-PALETTE_NAMES = list(PALETTES.keys())
+PALETTE_NAMES: List[str] = list(PALETTES.keys())
+
+# Global tracker for `render_hud` and `main`
+current_palette: int = 0
 
 
-# ── Cellular Automaton Engine ─────────────────────────────────────────────
+# ====================================================================================================
+# Cellular Automaton Engine
+# ====================================================================================================
+
 
 class CellState(Enum):
+    """State of a single cell."""
     DEAD = 0
     ALIVE = 1
 
+
 @dataclass
 class Cell:
-    state: CellState = CellState.DEAD
-    age: int = 0
-    species_id: int = 0
-    birth_gen: int = 0
+    """A single cell in the automaton grid."""
+    state : CellState = CellState.DEAD
+    age : int = 0
+    species_id : int = 0
+    birth_gen : int = 0
+
 
 class LifeEngine:
     """The cellular automaton engine."""
 
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int) -> None:
         self.width = width
         self.height = height
         self.grid: List[List[Cell]] = [
@@ -184,16 +219,23 @@ class LifeEngine:
         self.species_mode = True
         self.show_grid_lines = False
 
+    # ── Rule switching ───────────────────────────────────────────────────
+
     def get_rule(self) -> Rule:
+        """Return the current rule."""
         return self.rule
 
-    def next_rule(self):
+    def next_rule(self) -> None:
+        """Advance to the next rule set."""
         self.rule_index = (self.rule_index + 1) % len(RULES)
         self.rule = RULES[self.rule_index]
 
-    def prev_rule(self):
+    def prev_rule(self) -> None:
+        """Go back to the previous rule set."""
         self.rule_index = (self.rule_index - 1) % len(RULES)
         self.rule = RULES[self.rule_index]
+
+    # ── Neighbour computation ───────────────────────────────────────────
 
     def count_neighbours(self, x: int, y: int) -> int:
         """Count living neighbours with wrapping (toroidal surface)."""
@@ -208,8 +250,10 @@ class LifeEngine:
                     count += 1
         return count
 
+    # ── Generation step ─────────────────────────────────────────────────
+
     def step(self) -> int:
-        """Advance one generation. Returns population after step."""
+        """Advance one generation.  Returns population after step."""
         rule = self.rule
         changes: List[Tuple[int, int, bool]] = []
 
@@ -227,15 +271,13 @@ class LifeEngine:
                     if n in rule.birth:
                         changes.append((x, y, True))
 
-        # Apply changes
         pop = 0
         for x, y, become_alive in changes:
             cell = self.grid[y][x]
             if become_alive:
                 cell.state = CellState.ALIVE
                 if self.species_mode:
-                    # Inherit species from neighbours if possible
-                    neighbours = []
+                    neighbours: List[int] = []
                     for dy in (-1, 0, 1):
                         for dx in (-1, 0, 1):
                             if dx == 0 and dy == 0:
@@ -246,7 +288,6 @@ class LifeEngine:
                             if nc.state == CellState.ALIVE:
                                 neighbours.append(nc.species_id)
                     if neighbours:
-                        # Majority species wins
                         cell.species_id = max(set(neighbours), key=neighbours.count)
                     else:
                         cell.species_id = self.next_species_id
@@ -257,7 +298,6 @@ class LifeEngine:
                 cell.state = CellState.DEAD
                 cell.age = 0
 
-        # Age survivors and count population
         for y in range(self.height):
             for x in range(self.width):
                 cell = self.grid[y][x]
@@ -269,7 +309,10 @@ class LifeEngine:
         self.generation += 1
         return pop
 
-    def clear(self):
+    # ── Grid operations ─────────────────────────────────────────────────
+
+    def clear(self) -> None:
+        """Clear the grid."""
         for y in range(self.height):
             for x in range(self.width):
                 c = self.grid[y][x]
@@ -281,7 +324,8 @@ class LifeEngine:
         self.population = 0
         self.next_species_id = 1
 
-    def random_fill(self, density: float = 0.35):
+    def random_fill(self, density: float = 0.35) -> None:
+        """Fill grid randomly with given *density*."""
         for y in range(self.height):
             for x in range(self.width):
                 cell = self.grid[y][x]
@@ -299,7 +343,9 @@ class LifeEngine:
             1 for row in self.grid for c in row if c.state == CellState.ALIVE
         )
 
-    def place_pattern(self, cells: Set[Tuple[int, int]], offset_x: int = 0, offset_y: int = 0):
+    def place_pattern(self, cells: Set[Tuple[int, int]],
+                      offset_x: int = 0, offset_y: int = 0) -> None:
+        """Place a pattern of live cells on the grid."""
         for x, y in cells:
             gx, gy = (x + offset_x) % self.width, (y + offset_y) % self.height
             cell = self.grid[gy][gx]
@@ -312,7 +358,11 @@ class LifeEngine:
             1 for row in self.grid for c in row if c.state == CellState.ALIVE
         )
 
-    def get_cell_colour(self, x: int, y: int, palette_idx: int = 0) -> Tuple[int, int, int]:
+    # ── Colour ──────────────────────────────────────────────────────────
+
+    def get_cell_colour(self, x: int, y: int,
+                        palette_idx: int = 0) -> Tuple[int, int, int]:
+        """Return the colour for cell at (*x*, *y*)."""
         cell = self.grid[y][x]
         if cell.state != CellState.ALIVE:
             return (0, 0, 0)
@@ -320,48 +370,55 @@ class LifeEngine:
         palette = PALETTES[PALETTE_NAMES[palette_idx % len(PALETTES)]]
 
         if self.species_mode and cell.species_id > 0:
-            # Colour by species hash
             idx = (cell.species_id * 7 + cell.age * 3) % len(palette)
             r, g, b = palette[idx]
-            # Age brightens
             factor = min(1.0, 0.3 + cell.age * 0.02)
             r = min(255, int(r * factor))
             g = min(255, int(g * factor))
             b = min(255, int(b * factor))
             return (r, g, b)
         else:
-            # Age-based gradient
             t = min(1.0, cell.age / 30)
             idx = min(len(palette) - 1, int(t * (len(palette) - 1)))
             return palette[idx]
 
 
-# ── Terminal Renderer ─────────────────────────────────────────────────────
+# ====================================================================================================
+# Terminal Renderer
+# ====================================================================================================
+
+DENSITY_CHARS: List[str] = ["·", "·", "·", "·", ".", "·", "+", "*", "◆", "★"]
+
 
 @dataclass
 class Screen:
-    width: int
-    height: int
-    chars: List[List[str]] = field(init=False)
-    colours: List[List[Tuple[int, int, int]]] = field(init=False)
+    """Off-screen buffer for composing a frame before flush."""
+    width : int
+    height : int
+    chars : List[List[str]] = field(init=False)
+    colours : List[List[Tuple[int, int, int]]] = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.chars = [[" "] * self.width for _ in range(self.height)]
         self.colours = [[(0, 0, 0)] * self.width for _ in range(self.height)]
 
-    def clear(self):
+    def clear(self) -> None:
+        """Reset the buffer to empty."""
         for y in range(self.height):
             for x in range(self.width):
                 self.chars[y][x] = " "
                 self.colours[y][x] = (0, 0, 0)
 
-    def set(self, x: int, y: int, ch: str, colour: Tuple[int, int, int]):
+    def set(self, x: int, y: int, ch: str,
+            colour: Tuple[int, int, int]) -> None:
+        """Place a character with colour at (*x*, *y*)."""
         if 0 <= x < self.width and 0 <= y < self.height:
             self.chars[y][x] = ch
             self.colours[y][x] = colour
 
     def render(self) -> str:
-        out = [HOME]
+        """Render the buffer to an ANSI-escaped string."""
+        out: List[str] = [HOME]
         last_r, last_g, last_b = -1, -1, -1
         for y in range(self.height):
             for x in range(self.width):
@@ -377,15 +434,17 @@ class Screen:
         return "".join(out)
 
 
-# ── HUD ───────────────────────────────────────────────────────────────────
+# ====================================================================================================
+# HUD
+# ====================================================================================================
 
-DENSITY_CHARS = ["·", "·", "·", "·", ".", "·", "+", "*", "◆", "★"]
 
-def render_hud(screen: Screen, engine: LifeEngine, fps: float, paused: bool, glider_active: bool):
+def render_hud(screen: Screen, engine: LifeEngine,
+               fps: float, paused: bool, glider_active: bool) -> None:
+    """Draw the HUD info bar at the bottom of the screen."""
     rule = engine.get_rule()
     w, h = screen.width, screen.height
 
-    # Bottom bar — rule info
     bar_y = h - 1
     rule_text = f" 🧬 {rule.name} — {rule.description} "
     pop_text = f" Pop: {engine.population:>5} "
@@ -404,7 +463,6 @@ def render_hud(screen: Screen, engine: LifeEngine, fps: float, paused: bool, gli
         if x < w:
             screen.set(x, bar_y, ch, (180, 220, 255))
 
-    # Legend at top
     leg_y = 0
     pal_name = PALETTE_NAMES[current_palette]
     species_text = " 🧬 Species" if engine.species_mode else " 🌱 Age"
@@ -415,10 +473,14 @@ def render_hud(screen: Screen, engine: LifeEngine, fps: float, paused: bool, gli
             screen.set(x, leg_y, leg[x], (140, 180, 220))
 
 
-# ── Help Screen ───────────────────────────────────────────────────────────
+# ====================================================================================================
+# Help Screen
+# ====================================================================================================
 
-def show_help(screen: Screen):
-    help_lines = [
+
+def show_help(screen: Screen) -> None:
+    """Overlay the help screen onto *screen*."""
+    help_lines: List[str] = [
         "╔══════════════════════════════════════════════╗",
         "║        🧬 LifeLike — Controls               ║",
         "╠══════════════════════════════════════════════╣",
@@ -449,9 +511,13 @@ def show_help(screen: Screen):
                     screen.set(sx, y, ch, colour)
 
 
-# ── Main Loop ─────────────────────────────────────────────────────────────
+# ====================================================================================================
+# Main Loop
+# ====================================================================================================
 
-def main():
+
+def main() -> None:
+    """Entry point with error handling."""
     try:
         _main()
     except KeyboardInterrupt:
@@ -459,44 +525,42 @@ def main():
     finally:
         print(SHOW, end="", flush=True)
 
-def _main():
+
+def _main() -> None:
+    """Run the interactive Life simulator."""
+    global current_palette
     ts = shutil.get_terminal_size()
     W = ts.columns - 1
     H = ts.lines
 
-    # Leave 1 row for HUD, 1 for legend
     grid_h = H - 2
     grid_w = W
 
     engine = LifeEngine(grid_w, grid_h)
     screen = Screen(W, H)
 
-    # Populate initial random
     engine.random_fill(0.3)
 
     paused = False
     running = True
-    speed = 8  # frames per second
+    speed = 8
     glider_active = False
     glider_pos = (5, 5)
-    global current_palette
     current_palette = 0
 
-    # Frame timing
     frame_time = 1.0 / speed
     last_frame = time.monotonic()
     fps = speed
     fps_counter = 0
     fps_timer = time.monotonic()
 
-    # Help toggle
     help_visible = False
 
-    # Non-blocking key read
     if sys.platform == "win32":
         import msvcrt
 
     def get_key() -> Optional[str]:
+        """Read a keypress without blocking (Windows msvcrt)."""
         if sys.platform == "win32":
             if msvcrt.kbhit():
                 ch = msvcrt.getwch()
@@ -513,9 +577,7 @@ def _main():
 
     while running:
         now = time.monotonic()
-        elapsed = now - last_frame
 
-        # Process keys
         while True:
             key = get_key()
             if key is None:
@@ -565,54 +627,46 @@ def _main():
             elif key == 'h' or key == 'H':
                 help_visible = not help_visible
 
-        # Update
-        if not paused and elapsed >= frame_time:
+        if not paused and now - last_frame >= frame_time:
             engine.step()
             last_frame = now
 
-            # Auto-glider: if active and population drops low, reseed
             if glider_active and engine.population < 20:
                 cells = parse_pattern(GLIDER_GUN,
                     random.randint(0, W - 40),
                     random.randint(0, grid_h - 10))
                 engine.place_pattern(cells)
 
-        # FPS counter
         fps_counter += 1
         if now - fps_timer >= 1.0:
             fps = fps_counter / (now - fps_timer)
             fps_counter = 0
             fps_timer = now
 
-        # Render
         screen.clear()
 
-        # Draw grid
         if not help_visible:
             for y in range(grid_h):
                 for x in range(grid_w):
                     cell = engine.grid[y][x]
                     if cell.state == CellState.ALIVE:
                         colour = engine.get_cell_colour(x, y, current_palette)
-                        # Choose char based on age
                         age_idx = min(len(DENSITY_CHARS) - 1, cell.age // 3)
                         ch = DENSITY_CHARS[age_idx]
                         screen.set(x, y, ch, colour)
 
-            # HUD
             render_hud(screen, engine, fps, paused, glider_active)
         else:
             show_help(screen)
 
-        # Flush
         sys.stdout.write(screen.render())
         sys.stdout.flush()
 
-        # Sleep to avoid busy-wait
         remaining = frame_time - (time.monotonic() - last_frame)
         if remaining > 0.005 and not paused:
             time.sleep(min(remaining, 0.05))
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     main()

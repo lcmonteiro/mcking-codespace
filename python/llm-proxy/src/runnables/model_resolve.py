@@ -1,10 +1,14 @@
+# ====================================================================================================
+# ModelResolveRunnable
+# ====================================================================================================
+
 """
 ModelResolveRunnable — resolves a model abstraction to a concrete LangChain ChatModel.
 
 LangChain Runnable with typed Pydantic I/O.
 """
-from __future__ import annotations
 
+import logging
 import random
 from typing import Any, Dict, List, Optional
 
@@ -18,29 +22,45 @@ from src.db.session import AsyncSessionLocal
 from config.settings import settings
 from src.services.model_registry import _PROVIDER_CLASSES, _RoundRobinPool, _api_key_param
 
+logger = logging.getLogger(__name__)
+
+
+# ====================================================================================================
+# Module state
+# ====================================================================================================
 
 # Round-robin state (shared across runs)
 _rr_pool = _RoundRobinPool()
 
 
-# ─── I/O Schemas ──────────────────────────────────────────────────────────────
+# ====================================================================================================
+# I/O Schemas
+# ====================================================================================================
+
 
 class ModelResolveInput(BaseModel):
-    abstraction:     ModelAbstraction
-    override_params: Dict[str, Any] = {}
+    """Input schema for model resolution."""
+
+    abstraction     : ModelAbstraction
+    override_params : Dict[str, Any] = {}
 
 
 class ModelResolveOutput(BaseModel):
-    success:       bool = False
-    model:         Optional[Any] = None
-    mapping:       Optional[Any] = None
-    provider_key:  Optional[Any] = None
-    error_message: Optional[str] = None
+    """Output schema for model resolution."""
+
+    success       : bool           = False
+    model         : Optional[Any]  = None
+    mapping       : Optional[Any]  = None
+    provider_key  : Optional[Any]  = None
+    error_message : Optional[str]  = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-# ─── Runnable ─────────────────────────────────────────────────────────────────
+# ====================================================================================================
+# Runnable
+# ====================================================================================================
+
 
 class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
     """
@@ -57,9 +77,9 @@ class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
 
     async def ainvoke(
         self,
-        input: ModelResolveInput,
-        config: Optional[RunnableConfig] = None,
-        **kwargs: Any,
+        input    : ModelResolveInput,
+        config   : Optional[RunnableConfig] = None,
+        **kwargs : Any,
     ) -> ModelResolveOutput:
         async with AsyncSessionLocal() as db:
             # 1. Best mapping
@@ -74,26 +94,30 @@ class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
             mapping: Optional[ModelMapping] = result.scalars().first()
             if not mapping:
                 return ModelResolveOutput(
-                    success=False,
-                    error_message=(
-                        f"No active model mapping found for abstraction '{input.abstraction.value}'. "
-                        "Configure one via POST /admin/model-mappings."
+                    success      = False,
+                    error_message = (
+                        f"No active model mapping found for abstraction "
+                        f"'{input.abstraction.value}'. Configure one via "
+                        "POST /admin/model-mappings."
                     ),
                 )
 
             # 2. Pick a provider key with rotation
             key_result = await db.execute(
                 select(ProviderKey)
-                .where(ProviderKey.provider == mapping.provider, ProviderKey.is_active == True)
+                .where(
+                    ProviderKey.provider == mapping.provider,
+                    ProviderKey.is_active == True,
+                )
                 .order_by(ProviderKey.priority.desc())
             )
             keys: List[ProviderKey] = key_result.scalars().all()
             if not keys:
                 return ModelResolveOutput(
-                    success=False,
-                    error_message=(
-                        f"No active API key registered for provider '{mapping.provider}'. "
-                        "Add one via POST /admin/provider-keys."
+                    success      = False,
+                    error_message = (
+                        f"No active API key registered for provider "
+                        f"'{mapping.provider}'. Add one via POST /admin/provider-keys."
                     ),
                 )
 
@@ -110,12 +134,12 @@ class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
             cls = _PROVIDER_CLASSES.get(mapping.provider)
             if cls is None:
                 return ModelResolveOutput(
-                    success=False,
-                    error_message=f"Unsupported provider: '{mapping.provider}'",
+                    success      = False,
+                    error_message = f"Unsupported provider: '{mapping.provider}'",
                 )
 
             base_params: Dict[str, Any] = {
-                "model": mapping.model_name,
+                "model"    : mapping.model_name,
                 **(mapping.extra_params or {}),
             }
             if mapping.max_tokens is not None:
@@ -130,13 +154,13 @@ class ModelResolveRunnable(Runnable[ModelResolveInput, ModelResolveOutput]):
             try:
                 model = cls(**base_params)
                 return ModelResolveOutput(
-                    success=True,
-                    model=model,
-                    mapping=mapping,
-                    provider_key=key,
+                    success      = True,
+                    model        = model,
+                    mapping      = mapping,
+                    provider_key = key,
                 )
             except Exception as exc:
                 return ModelResolveOutput(
-                    success=False,
-                    error_message=f"Failed to instantiate model: {exc}",
+                    success       = False,
+                    error_message = f"Failed to instantiate model: {exc}",
                 )

@@ -1,10 +1,14 @@
+# ====================================================================================================
+# BudgetDeductRunnable
+# ====================================================================================================
+
 """
 BudgetDeductRunnable — deducts tokens from budget and records usage to the audit log.
 
 LangChain Runnable with typed Pydantic I/O.
 """
-from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -15,50 +19,60 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.models import AccessToken, BudgetType, RequestStatus, TokenStatus, UsageLog
 from src.db.session import AsyncSessionLocal
 
+logger = logging.getLogger(__name__)
 
-# ─── I/O Schema ───────────────────────────────────────────────────────────────
+
+# ====================================================================================================
+# I/O Schema
+# ====================================================================================================
+
 
 class BudgetDeductInput(BaseModel):
-    token:            Any       = None
-    prompt_tokens:    int       = 0
-    completion_tokens: int      = 0
-    provider_key_id:  str       = ""
-    abstraction:      str       = ""
-    provider:         str       = ""
-    model_name:       str       = ""
-    latency_ms:       int       = 0
-    request_id:       Optional[str] = None
-    ip_address:       Optional[str] = None
-    error_message:    Optional[str] = None
-    status:           RequestStatus = RequestStatus.SUCCESS
+    """Input schema for budget deduction."""
+
+    token             : Any              = None
+    prompt_tokens     : int              = 0
+    completion_tokens : int              = 0
+    provider_key_id   : str              = ""
+    abstraction       : str              = ""
+    provider          : str              = ""
+    model_name        : str              = ""
+    latency_ms        : int              = 0
+    request_id        : Optional[str]    = None
+    ip_address        : Optional[str]    = None
+    error_message     : Optional[str]    = None
+    status            : RequestStatus    = RequestStatus.SUCCESS
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-# ─── Runnable ─────────────────────────────────────────────────────────────────
+# ====================================================================================================
+# Runnable
+# ====================================================================================================
+
 
 class BudgetDeductRunnable(Runnable[BudgetDeductInput, dict]):
     """
     Deduct tokens from the access token budget and persist an audit log entry.
 
     Usage:
-        await BudgetDeductRunnable().ainvoke(BudgetDeductInput(
-            token=access_token_obj,
-            prompt_tokens=100,
-            completion_tokens=50,
-            provider_key_id="...",
-            abstraction="coding",
-            provider="openai",
-            model_name="gpt-4o",
-            latency_ms=1200,
+        result = await BudgetDeductRunnable().ainvoke(BudgetDeductInput(
+            token            = access_token_obj,
+            prompt_tokens    = 100,
+            completion_tokens = 50,
+            provider_key_id  = "...",
+            abstraction      = "coding",
+            provider         = "openai",
+            model_name       = "gpt-4o",
+            latency_ms       = 1200,
         ))
     """
 
     async def ainvoke(
         self,
-        input: BudgetDeductInput,
-        config: Optional[RunnableConfig] = None,
-        **kwargs: Any,
+        input    : BudgetDeductInput,
+        config   : Optional[RunnableConfig] = None,
+        **kwargs : Any,
     ) -> dict:
         async with AsyncSessionLocal() as db:
             total = input.prompt_tokens + input.completion_tokens
@@ -84,19 +98,19 @@ class BudgetDeductRunnable(Runnable[BudgetDeductInput, dict]):
 
             # Immutable audit log entry
             log = UsageLog(
-                access_token_id=getattr(input.token, "id", None) if input.token else None,
-                provider_key_id=input.provider_key_id,
-                abstraction=input.abstraction,
-                provider=input.provider,
-                model_name=input.model_name,
-                prompt_tokens=input.prompt_tokens,
-                completion_tokens=input.completion_tokens,
-                total_tokens=total,
-                latency_ms=input.latency_ms,
-                status=input.status,
-                error_message=input.error_message,
-                request_id=input.request_id,
-                ip_address=input.ip_address,
+                access_token_id  = getattr(input.token, "id", None) if input.token else None,
+                provider_key_id  = input.provider_key_id,
+                abstraction      = input.abstraction,
+                provider         = input.provider,
+                model_name       = input.model_name,
+                prompt_tokens    = input.prompt_tokens,
+                completion_tokens = input.completion_tokens,
+                total_tokens     = total,
+                latency_ms       = input.latency_ms,
+                status           = input.status,
+                error_message    = input.error_message,
+                request_id       = input.request_id,
+                ip_address       = input.ip_address,
             )
             db.add(log)
             await db.commit()

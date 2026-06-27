@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Matrix Digital Rain — Terminal ANSI Effect
+============================================
 Inspired by The Matrix (1999).
 
 Green katakana characters cascade down the terminal,
@@ -9,31 +10,36 @@ fading trails, occasional brighter "head" characters.
 Zero external dependencies. Press 'q' or ESC to exit.
 """
 
-import sys
 import io
-import time
+import logging
 import random
+import sys
+import time
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
-# ── UTF-8 fix for Windows ────────────────────────────────────────
+# Ensure UTF-8 for Windows terminal
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 elif hasattr(sys.stdout, 'buffer'):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-# ── ANSI helpers ─────────────────────────────────────────────────
-HIDE    = "\033[?25l"
-SHOW    = "\033[?25h"
-HOME    = "\033[H"
-RESET   = "\033[0m"
-BOLD    = "\033[1m"
+logger = logging.getLogger(__name__)
 
-def fg(r: int, g: int, b: int) -> str:
-    return f"\033[38;2;{r};{g};{b}m"
+# ====================================================================================================
+# Constants
+# ====================================================================================================
 
-# ── Katakana character set ───────────────────────────────────────
-KATAKANA = (
+FPS     : int = 30
+FRAME_S : float = 1.0 / FPS
+
+HIDE  : str = "\033[?25l"
+SHOW  : str = "\033[?25h"
+HOME  : str = "\033[H"
+RESET : str = "\033[0m"
+BOLD  : str = "\033[1m"
+
+KATAKANA: str = (
     "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝ"
     "ﾞﾟ･ｰ｡｢｣､"
     "アイウエオカキクケコサシスセソ"
@@ -43,49 +49,75 @@ KATAKANA = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 )
 
-# ── Drop ──────────────────────────────────────────────────────────
+# ====================================================================================================
+# Dataclasses
+# ====================================================================================================
+
 
 @dataclass
 class Drop:
-    x: int
-    y: float        # float for smooth movement
-    speed: float     # chars per second
-    length: int      # trail length
-    head_bright: int # 0-255 brightness for the head char
-    fade: float      # how quickly the trail fades (0-1 per char)
-    chars: List[str] = field(default_factory=list)
+    """A single falling katakana column."""
+    x : int
+    y : float          # float for smooth movement
+    speed : float       # chars per second
+    length : int        # trail length
+    head_bright : int   # 0-255 brightness for the head char
+    fade : float        # how quickly the trail fades (0-1 per char)
+    chars : List[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         n = self.length + 5  # extra buffer
         self.chars = [random.choice(KATAKANA) for _ in range(n)]
 
     def new_char(self) -> str:
+        """Return a random katakana character."""
         return random.choice(KATAKANA)
 
-# ── Scene ─────────────────────────────────────────────────────────
 
 @dataclass
 class Scene:
-    W: int = 80
-    H: int = 24
-    drops: List[Drop] = field(default_factory=list)
-    density: float = 0.08  # fraction of columns with a drop
-    bg_color: Tuple[int, int, int] = (0, 5, 0)  # very dark green
-    time: float = 0.0
+    """The full digital rain scene."""
+    W : int = 80
+    H : int = 24
+    drops : List[Drop] = field(default_factory=list)
+    density : float = 0.08  # fraction of columns with a drop
+    bg_color : Tuple[int, int, int] = (0, 5, 0)  # very dark green
+    time : float = 0.0
 
-# ── Terminal size ────────────────────────────────────────────────
+
+# ====================================================================================================
+# Terminal Helpers
+# ====================================================================================================
+
+
+def fg(r: int, g: int, b: int) -> str:
+    """Return ANSI truecolor foreground escape code."""
+    return f"\033[38;2;{r};{g};{b}m"
+
+
+def green_bright(b: int) -> str:
+    """Green foreground at brightness *b* (0-255)."""
+    g = max(0, min(255, b))
+    return fg(0, g, 10 + g // 6)
+
 
 def get_terminal_size() -> Tuple[int, int]:
+    """Return terminal (columns, lines), falling back to 80x24."""
     try:
         import shutil
         w, h = shutil.get_terminal_size((80, 24))
         return w, h
-    except:
+    except Exception:
         return 80, 24
 
-# ── Keyboard (non-blocking, cross-platform) ──────────────────────
+
+# ====================================================================================================
+# Keyboard Input (Non-Blocking)
+# ====================================================================================================
+
 
 def get_key() -> Optional[str]:
+    """Read a single keypress without blocking. Returns ``None`` if no key."""
     if sys.platform == "win32":
         import msvcrt
         if msvcrt.kbhit():
@@ -100,21 +132,20 @@ def get_key() -> Optional[str]:
             return sys.stdin.read(1)
     return None
 
-# ── Colors ───────────────────────────────────────────────────────
 
-def green_bright(b: int) -> str:
-    """Green at brightness b (0-255)."""
-    g = max(0, min(255, b))
-    return fg(0, g, 10 + g // 6)
+# ====================================================================================================
+# Rain Logic
+# ====================================================================================================
 
-# ── Rain logic ───────────────────────────────────────────────────
 
 def init_scene() -> Scene:
+    """Create a new Scene matching the current terminal size."""
     w, h = get_terminal_size()
-    scene = Scene(W=w, H=h)
-    return scene
+    return Scene(W=w, H=h)
+
 
 def spawn_drop(scene: Scene) -> Drop:
+    """Create a new Drop at a random column."""
     x = random.randint(0, scene.W - 1)
     speed = 3 + random.random() * 8
     length = random.randint(5, 20)
@@ -128,7 +159,9 @@ def spawn_drop(scene: Scene) -> Drop:
         fade=fade,
     )
 
-def update_scene(scene: Scene, dt: float):
+
+def update_scene(scene: Scene, dt: float) -> None:
+    """Advance the rain simulation by *dt* seconds."""
     scene.time += dt
 
     # Spawn new drops
@@ -160,88 +193,30 @@ def update_scene(scene: Scene, dt: float):
 
     scene.drops = new_drops
 
-# ── Rendering ────────────────────────────────────────────────────
 
-def render_frame(scene: Scene) -> str:
-    w, h = scene.W, scene.H
+# ====================================================================================================
+# Rendering
+# ====================================================================================================
 
-    # Initialize empty screen buffer
-    screen = [[" " for _ in range(w)] for _ in range(h)]
+# Column-indexed cache of drops for faster rendering (global, rebuilt per frame)
+drop_scan_cache: Dict[int, List[Drop]] = {}
 
-    # Draw each drop's trail bottom-up
-    for drop in scene.drops:
-        # Find integer y positions
-        head_y = int(drop.y)
-        if head_y < 0:
-            continue
 
-        # The head character (brightest)
-        if 0 <= head_y < h and 0 <= drop.x < w:
-            ch = drop.chars[0] if drop.chars else drop.new_char()
-            screen[head_y][drop.x] = drop.chars[0]
-
-        # Trail characters fade out going up
-        for i in range(1, drop.length + 1):
-            ty = head_y - i
-            if ty < 0:
-                break
-            if ty >= h:
-                continue
-            # Brightness decreases down the trail
-            brightness = drop.head_bright * ((1 - drop.fade) ** i)
-            if brightness < 8:
-                break
-            # Skip if character index wraps
-            ci = min(i, len(drop.chars) - 1)
-            ch = drop.chars[ci]
-            if brightness < 40 and ch == " ":
-                ch = "."
-            screen[ty][drop.x] = ch
-
-    # Build the frame with ANSI coloring
-    lines = []
-    for y in range(h):
-        row = ""
-        for x in range(w):
-            ch = screen[y][x]
-            if ch == " ":
-                # Background (very dark green)
-                row += "\033[48;2;0;5;0m " + RESET
-            else:
-                # Determine brightness by distance from head
-                # We'll use ANSI 256 green ramp
-                # Scan drops to find this cell's brightness
-                brightness = 0
-                for drop in drop_scan_cache.get(x, []):
-                    head_y = int(drop.y)
-                    dist = head_y - y
-                    if dist >= 0:
-                        b = drop.head_bright * ((1 - drop.fade) ** dist)
-                        if b > brightness:
-                            brightness = b
-                b = int(max(0, min(255, brightness)))
-                # Color: bright head (255,255,255) dims to green
-                if b > 200:
-                    row += fg(160 + b // 4, 255, 160 + b // 4) + BOLD + ch + RESET
-                else:
-                    row += fg(0, max(0, b - 20), 0) + ch + RESET
-        lines.append(row)
-
-    return HOME + "\n".join(lines)
-
-# Precompute a cache per column for rendering (lazy per frame)
-drop_scan_cache: dict = {}
-
-def build_drop_cache(scene: Scene):
+def build_drop_cache(scene: Scene) -> Dict[int, List[Drop]]:
     """Build a column-indexed cache of drops for faster rendering."""
-    cache: dict = {}
+    cache: Dict[int, List[Drop]] = {}
     for drop in scene.drops:
         cache.setdefault(drop.x, []).append(drop)
     return cache
 
-# ── Main ──────────────────────────────────────────────────────────
 
-def main():
+# ====================================================================================================
+# Main
+# ====================================================================================================
+
+
+def main() -> None:
+    """Run the Matrix rain animation."""
     sys.stdout.write(HIDE)
     sys.stdout.flush()
 
@@ -272,32 +247,29 @@ def main():
 
             update_scene(scene, dt)
 
-            # Naive render (no cache for simplicity)
-            lines = []
-            for y in range(scene.H):
-                row_parts = {}
-                for drop in scene.drops:
-                    head_y = int(drop.y)
-                    if head_y < 0 or drop.x < 0 or drop.x >= scene.W:
-                        continue
-                    for i in range(drop.length + 1):
-                        ty = head_y - i
-                        if ty < 0 or ty >= scene.H:
-                            continue
-                        if i == 0:
-                            brightness = drop.head_bright
-                        else:
-                            brightness = int(drop.head_bright * ((1 - drop.fade) ** i))
-                        if brightness < 10:
-                            break
-                        ci = min(i, len(drop.chars) - 1)
-                        ch = drop.chars[ci]
-                        # Keep the brightest char for each cell
-                        if brightness > row_parts.get((ty, drop.x, 'b'), 0):
-                            row_parts[(ty, drop.x)] = (ch, brightness)
-
             # Build frame from row_parts
-            frame_rows = []
+            row_parts: Dict[Tuple[int, int], Tuple[str, int]] = {}
+            for drop in scene.drops:
+                head_y = int(drop.y)
+                if head_y < 0 or drop.x < 0 or drop.x >= scene.W:
+                    continue
+                for i in range(drop.length + 1):
+                    ty = head_y - i
+                    if ty < 0 or ty >= scene.H:
+                        continue
+                    if i == 0:
+                        brightness = drop.head_bright
+                    else:
+                        brightness = int(drop.head_bright * ((1 - drop.fade) ** i))
+                    if brightness < 10:
+                        break
+                    ci = min(i, len(drop.chars) - 1)
+                    ch = drop.chars[ci]
+                    # Keep the brightest char for each cell
+                    if brightness > row_parts.get((ty, drop.x), (None, 0))[1]:
+                        row_parts[(ty, drop.x)] = (ch, brightness)
+
+            frame_rows: List[str] = []
             for y in range(scene.H):
                 row = ""
                 for x in range(scene.W):
@@ -327,5 +299,7 @@ def main():
         sys.stdout.flush()
         print(f"{fg(0, 200, 0)}Matrix Rain — desconectado.{RESET}")
 
+
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     main()
