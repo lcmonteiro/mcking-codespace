@@ -38,20 +38,9 @@ async def db_init() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def db_get() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency — yields a session per request."""
-    async with _async_session_local() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-
-
 @asynccontextmanager
 async def db_contex() -> AsyncGenerator[AsyncSession, None]:
-    """Async-context-manager version for use outside FastAPI."""
+    """Async-context-manager — provides a DB session with auto commit/rollback."""
     async with _async_session_local() as session:
         try:
             yield session
@@ -59,3 +48,9 @@ async def db_contex() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def db_get() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency — yields a session per request."""
+    async with db_contex() as session:
+        yield session
