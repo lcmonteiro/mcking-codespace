@@ -1,0 +1,13 @@
+# ====================================================================================================
+# Model Mappings — maps virtual abstractions to real provider models
+# ====================================================================================================
+
+# abstraction      provider     model_name                      priority
+mappings:
+  - { abstraction: coding,    provider: "openai",    model: "gpt-4o",                       priority: 10 }
+  - { abstraction: coding,    provider: "anthropic", model: "claude-3-5-sonnet-20241022",   priority: 5  }
+  - { abstraction: chat,      provider: "openai",    model: "gpt-4o-mini",                  priority: 10 }
+  - { abstraction: reasoning, provider: "openai",    model: "o1-mini",                      priority: 10 }
+  - { abstraction: vision,    provider: "openai",    model: "gpt-4o",                       priority: 10 }
+  - { abstraction: embedding, provider: "openai",    model: "text-embedding-3-small",       priority: 10 }
+  - { abstraction: summarize, provider: "anthropic", model: "claude-3-haiku-20240307",      priority: 10 }

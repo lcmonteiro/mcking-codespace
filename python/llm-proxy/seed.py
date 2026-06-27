@@ -8,11 +8,18 @@ Bootstrap script — seed the proxy with:
 Usage::
 
     python seed.py
+
+Configuration is loaded from ``seeds/model_mappings.yaml`` and
+``seeds/provider_keys.yaml``.
 """
 import asyncio
 import logging
 import os
 import sys
+from pathlib import Path
+from typing import List
+
+import yaml
 
 from src.db.models import BudgetType, ModelAbstraction, ModelMapping, ProviderKey
 from src.db.session import AsyncSessionLocal, init_db
@@ -20,32 +27,58 @@ from src.services.budget import BudgetService
 
 logger = logging.getLogger(__name__)
 
+# ====================================================================================================
+# Paths
+# ====================================================================================================
+
+SEEDS_DIR = Path(__file__).parent / "seeds"
+
 
 # ====================================================================================================
-# Constants — adjust to your real API keys
+# Loaders
 # ====================================================================================================
 
-OPENAI_KEY_ALICE : str = os.getenv("OPENAI_API_KEY_ALICE", "sk-alice-openai-key")
-OPENAI_KEY_BOB   : str = os.getenv("OPENAI_API_KEY_BOB",   "sk-bob-openai-key")
-ANTHROPIC_KEY    : str = os.getenv("ANTHROPIC_API_KEY",    "sk-ant-your-key")
 
-# abstraction      provider     model_name                      priority
-MAPPINGS = [
-    (ModelAbstraction.CODING,    "openai",    "gpt-4o",                       10),
-    (ModelAbstraction.CODING,    "anthropic", "claude-3-5-sonnet-20241022",    5),  # fallback
-    (ModelAbstraction.CHAT,      "openai",    "gpt-4o-mini",                  10),
-    (ModelAbstraction.REASONING, "openai",    "o1-mini",                      10),
-    (ModelAbstraction.VISION,    "openai",    "gpt-4o",                       10),
-    (ModelAbstraction.EMBEDDING, "openai",    "text-embedding-3-small",       10),
-    (ModelAbstraction.SUMMARIZE, "anthropic", "claude-3-haiku-20240307",      10),
-]
+def _load_mappings(path: Path) -> List[tuple]:
+    """
+    Load model mappings from *path*.
 
-# owner       provider     key                  priority
-PROVIDER_KEYS = [
-    ("alice",    "openai",    OPENAI_KEY_ALICE,     10),
-    ("bob",      "openai",    OPENAI_KEY_BOB,        5),
-    ("company",  "anthropic", ANTHROPIC_KEY,        10),
-]
+    Returns:
+        List of (abstraction, provider, model_name, priority) tuples.
+    """
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    result: List[tuple] = []
+    for entry in raw["mappings"]:
+        result.append((
+            ModelAbstraction(entry["abstraction"]),
+            entry["provider"],
+            entry["model"],
+            entry["priority"],
+        ))
+    return result
+
+
+def _load_provider_keys(path: Path) -> List[tuple]:
+    """
+    Load provider API-key references from *path*.
+
+    Each entry may reference an environment variable; the env value is used
+    when set, otherwise the YAML ``default`` field is used.
+
+    Returns:
+        List of (owner, provider, api_key, priority) tuples.
+    """
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    result: List[tuple] = []
+    for entry in raw["keys"]:
+        api_key = os.getenv(entry["env_var"], entry["default"])
+        result.append((
+            entry["owner"],
+            entry["provider"],
+            api_key,
+            entry["priority"],
+        ))
+    return result
 
 
 # ====================================================================================================
@@ -60,6 +93,19 @@ async def seed() -> None:
     Prints the raw access tokens to stdout — save them immediately as they
     will not be shown again.
     """
+    mappings_path  = SEEDS_DIR / "model_mappings.yaml"
+    provider_path  = SEEDS_DIR / "provider_keys.yaml"
+    local_provider_path = SEEDS_DIR / "provider_keys.local.yaml"
+
+    MAPPINGS       = _load_mappings(mappings_path)
+    PROVIDER_KEYS  = _load_provider_keys(
+        local_provider_path if local_provider_path.exists() else provider_path
+    )
+
+    logger.info("Loaded %d model mappings  from %s", len(MAPPINGS), mappings_path)
+    logger.info("Loaded %d provider keys  from %s", len(PROVIDER_KEYS),
+                local_provider_path if local_provider_path.exists() else provider_path)
+
     logger.info("Initialising database\u2026")
     await init_db()
 

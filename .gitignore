@@ -27,3 +27,6 @@ Thumbs.db
 
 # Config export (from sync-github script)
 config-export.md
+
+# Local seed overrides (real API keys)
+python/llm-proxy/seeds/provider_keys.local.yaml

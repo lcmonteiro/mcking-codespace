@@ -1,0 +1,17 @@
+# ====================================================================================================
+# Provider API Keys — reference environment variables
+# ====================================================================================================
+#
+# ⚠️  This file contains references to environment variables.
+#     The actual keys are read from env at seed time.
+#     NEVER commit real keys to version control.
+#
+# Add this file to .gitignore if you store real defaults.
+# A safe pattern: keep real values only in .env / env vars,
+# and use placeholder defaults here.
+
+# owner       provider     env_var                      default               priority
+keys:
+  - { owner: "alice",   provider: "openai",    env_var: "OPENAI_API_KEY_ALICE",  default: "sk-alice-openai-key",  priority: 10 }
+  - { owner: "bob",     provider: "openai",    env_var: "OPENAI_API_KEY_BOB",    default: "sk-bob-openai-key",    priority: 5  }
+  - { owner: "company", provider: "anthropic", env_var: "ANTHROPIC_API_KEY",     default: "sk-ant-your-key",      priority: 10 }
