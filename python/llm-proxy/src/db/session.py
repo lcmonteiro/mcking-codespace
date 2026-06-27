@@ -19,10 +19,10 @@ def _make_engine():
     return create_async_engine(url, echo=settings.DB_ECHO, **kwargs)
 
 
-engine = _make_engine()
+_engine = _make_engine()
 
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
+_async_session_local = async_sessionmaker(
+    bind=_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,
@@ -32,15 +32,15 @@ AsyncSessionLocal = async_sessionmaker(
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async def init_db() -> None:
+async def db_init() -> None:
     """Create all tables (dev / testing convenience)."""
-    async with engine.begin() as conn:
+    async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def db_get() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency — yields a session per request."""
-    async with AsyncSessionLocal() as session:
+    async with _async_session_local() as session:
         try:
             yield session
             await session.commit()
@@ -50,9 +50,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 @asynccontextmanager
-async def db_context() -> AsyncGenerator[AsyncSession, None]:
+async def db_contex() -> AsyncGenerator[AsyncSession, None]:
     """Async-context-manager version for use outside FastAPI."""
-    async with AsyncSessionLocal() as session:
+    async with _async_session_local() as session:
         try:
             yield session
             await session.commit()
