@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 800" width="880" height="800" style="font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="880" height="800" fill="#f8fafc" rx="8"/>
+
+  <!-- Title -->
+  <text x="440" y="32" text-anchor="middle" font-size="20" font-weight="700" fill="#172033">LLM Proxy — Request Flow (POST /v1/chat/completions)</text>
+
+  <!-- ================================================================ -->
+  <!-- Non-streaming path (left column)  x=40 to x=420 -->
+  <!-- Streaming path (right column)    x=460 to x=840 -->
+  <!-- ================================================================ -->
+
+  <!-- Step 0: Client -->
+  <rect x="60" y="60" width="320" height="50" rx="6" fill="#bfdbfe" stroke="#64748b" stroke-width="1.5" stroke-dasharray="0"/>
+  <text x="220" y="82" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">Client Request</text>
+  <text x="220" y="98" text-anchor="middle" font-size="11" fill="#3b82f6">POST /v1/chat/completions  ·  Authorization: Bearer &lt;token&gt;</text>
+
+  <line x1="220" y1="110" x2="220" y2="140" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- FastAPI - OpenAPI-compatible route -->
+  <rect x="60" y="145" width="320" height="40" rx="6" fill="#c7d2fe" stroke="#64748b" stroke-width="1"/>
+  <text x="220" y="162" text-anchor="middle" font-size="12" font-weight="600" fill="#3730a3">FastAPI Router — chat_completions()</text>
+  <text x="220" y="178" text-anchor="middle" font-size="11" fill="#5b6475">parses body, extracts abstraction + override params</text>
+
+  <line x1="220" y1="185" x2="220" y2="215" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 1: BudgetAuthRunnable -->
+  <rect x="60" y="220" width="320" height="55" rx="6" fill="#8b5cf6" stroke="#64748b" stroke-width="1"/>
+  <text x="220" y="240" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">① BudgetAuthRunnable</text>
+  <text x="220" y="256" text-anchor="middle" font-size="11" fill="#e9d5ff">hash(token) → lookup → assert_active → assert_budget</text>
+  <text x="220" y="269" text-anchor="middle" font-size="11" fill="#e9d5ff">→ assert_time_window → assert_model_allowed</text>
+
+  <!-- Error path from step 1 -->
+  <line x1="60" y1="247" x2="30" y2="247" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="30" y1="247" x2="30" y2="440" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="30" y1="440" x2="58" y2="440" stroke="#dc2626" stroke-width="1" marker-end="url(#arrow-red)"/>
+  <text x="32" y="360" font-size="10" fill="#dc2626" transform="rotate(-90, 22, 360)" text-anchor="middle">403 Forbidden</text>
+
+  <!-- Arrow to step 2 -->
+  <line x1="220" y1="275" x2="220" y2="305" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: ModelResolveRunnable -->
+  <rect x="60" y="310" width="320" height="55" rx="6" fill="#8b5cf6" stroke="#64748b" stroke-width="1"/>
+  <text x="220" y="330" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">② ModelResolveRunnable</text>
+  <text x="220" y="346" text-anchor="middle" font-size="11" fill="#e9d5ff">select best ModelMapping (abstraction → provider + model)</text>
+  <text x="220" y="359" text-anchor="middle" font-size="11" fill="#e9d5ff">→ rotate provider key (round_robin/random) → instantiate ChatModel</text>
+
+  <!-- Error path from step 2 -->
+  <line x1="60" y1="337" x2="30" y2="337" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>
+  <line x1="30" y1="337" x2="30" y2="440" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3"/>
+
+  <!-- Arrow to step 3 -->
+  <line x1="220" y1="365" x2="220" y2="395" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: LLM Call (split into non-stream + stream) -->
+  <rect x="60" y="400" width="320" height="50" rx="6" fill="#8b5cf6" stroke="#64748b" stroke-width="1"/>
+  <text x="220" y="420" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">③ LLM Call</text>
+  <text x="220" y="436" text-anchor="middle" font-size="11" fill="#e9d5ff">model.ainvoke(lc_messages)  vs  model.astream(lc_messages)</text>
+
+  <!-- Split: non-streaming vs streaming -->
+  <line x1="220" y1="450" x2="220" y2="475" stroke="#16a34a" stroke-width="2"/>
+  <line x1="220" y1="475" x2="120" y2="475" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="180" y="470" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="600">stream=false</text>
+  <line x1="220" y1="475" x2="320" y2="475" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="270" y="470" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="600">stream=true</text>
+
+  <!-- Left: Non-streaming -->
+  <rect x="40" y="485" width="170" height="65" rx="6" fill="#99f6e4" stroke="#0f766e" stroke-width="1"/>
+  <text x="125" y="506" text-anchor="middle" font-size="12" font-weight="600" fill="#0f766e"> Non-streaming</text>
+  <text x="125" y="522" text-anchor="middle" font-size="11" fill="#0f766e">await response</text>
+  <text x="125" y="538" text-anchor="middle" font-size="11" fill="#0f766e">→ ProxyOutput</text>
+
+  <!-- Right: Streaming -->
+  <rect x="280" y="485" width="170" height="65" rx="6" fill="#99f6e4" stroke="#0f766e" stroke-width="1"/>
+  <text x="365" y="506" text-anchor="middle" font-size="12" font-weight="600" fill="#0f766e">Streaming (SSE)</text>
+  <text x="365" y="522" text-anchor="middle" font-size="11" fill="#0f766e">async for chunk</text>
+  <text x="365" y="538" text-anchor="middle" font-size="11" fill="#0f766e">→ StreamChunk[setup, content*, done]</text>
+
+  <!-- Both go to step 4 -->
+  <line x1="125" y1="550" x2="125" y2="580" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="365" y1="550" x2="365" y2="580" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="125" y1="580" x2="220" y2="580" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="365" y1="580" x2="220" y2="580" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="220" y1="580" x2="220" y2="610" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Step 4: BudgetDeductRunnable -->
+  <rect x="60" y="615" width="320" height="55" rx="6" fill="#8b5cf6" stroke="#64748b" stroke-width="1"/>
+  <text x="220" y="635" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">④ BudgetDeductRunnable</text>
+  <text x="220" y="651" text-anchor="middle" font-size="11" fill="#e9d5ff">tokens_used += total  ·  check exhaustion  ·  insert UsageLog</text>
+  <text x="220" y="664" text-anchor="middle" font-size="11" fill="#e9d5ff">→ db.commit()</text>
+
+  <line x1="220" y1="670" x2="220" y2="700" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Response -->
+  <rect x="60" y="705" width="320" height="50" rx="6" fill="#16a34a" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="220" y="727" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">Response to Client</text>
+  <text x="220" y="743" text-anchor="middle" font-size="11" fill="#dcfce7">ChatCompletionResponse  ·  StreamingResponse (SSE)</text>
+
+  <!-- ================================================================ -->
+  <!-- RIGHT SIDE: Error paths + DB interaction -->
+  <!-- ================================================================ -->
+
+  <!-- Error handling box (right side) -->
+  <rect x="500" y="220" width="320" height="200" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="660" y="244" text-anchor="middle" font-size="13" font-weight="700" fill="#dc2626">Error Handling</text>
+
+  <!-- BudgetError -->
+  <rect x="520" y="262" width="280" height="40" rx="4" fill="#fecaca" stroke="#dc2626" stroke-width="1"/>
+  <text x="660" y="280" text-anchor="middle" font-size="12" font-weight="600" fill="#991b1b">BudgetError</text>
+  <text x="660" y="296" text-anchor="middle" font-size="11" fill="#991b1b">→ ProxyOutput(status=BLOCKED, error_message)</text>
+
+  <!-- ValueError -->
+  <rect x="520" y="312" width="280" height="40" rx="4" fill="#fecaca" stroke="#dc2626" stroke-width="1"/>
+  <text x="660" y="330" text-anchor="middle" font-size="12" font-weight="600" fill="#991b1b">Model Resolution Error</text>
+  <text x="660" y="346" text-anchor="middle" font-size="11" fill="#991b1b">→ ProxyOutput(status=ERROR, error_message)</text>
+
+  <!-- Upstream Error -->
+  <rect x="520" y="362" width="280" height="40" rx="4" fill="#fecaca" stroke="#dc2626" stroke-width="1"/>
+  <text x="660" y="380" text-anchor="middle" font-size="12" font-weight="600" fill="#991b1b">Upstream LLM Error</text>
+  <text x="660" y="396" text-anchor="middle" font-size="11" fill="#991b1b">→ deduct with error status → ProxyOutput(status=ERROR)</text>
+
+  <!-- Connection from error paths to error handling -->
+  <line x1="380" y1="247" x2="498" y2="282" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow-red)"/>
+  <line x1="380" y1="337" x2="498" y2="332" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow-red)"/>
+  <line x1="380" y1="425" x2="498" y2="382" stroke="#dc2626" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow-red)"/>
+
+  <!-- DB interaction box -->
+  <rect x="500" y="470" width="320" height="130" rx="8" fill="#ecfdf5" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="660" y="494" text-anchor="middle" font-size="13" font-weight="700" fill="#16a34a">Database Interaction</text>
+
+  <rect x="520" y="512" width="280" height="36" rx="4" fill="#99f6e4" stroke="#0f766e" stroke-width="1"/>
+  <text x="660" y="530" text-anchor="middle" font-size="11" font-weight="600" fill="#0f766e">access_tokens:  tokens_used += total</text>
+  <text x="660" y="544" text-anchor="middle" font-size="11" fill="#0f766e">(auto-exhaust if budget exceeded)</text>
+
+  <rect x="520" y="555" width="280" height="36" rx="4" fill="#99f6e4" stroke="#0f766e" stroke-width="1"/>
+  <text x="660" y="573" text-anchor="middle" font-size="11" font-weight="600" fill="#0f766e">usage_logs:  INSERT immutable audit record</text>
+  <text x="660" y="587" text-anchor="middle" font-size="11" fill="#0f766e">(tokens, latency, status, error, ip)</text>
+
+  <!-- Connection to DB -->
+  <line x1="380" y1="642" x2="498" y2="537" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <!-- Key at bottom -->
+  <rect x="500" y="620" width="320" height="80" rx="6" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/>
+  <text x="660" y="642" text-anchor="middle" font-size="12" font-weight="700" fill="#172033">Legend</text>
+  <rect x="520" y="654" width="12" height="12" rx="2" fill="#8b5cf6" />
+  <text x="538" y="665" font-size="11" fill="#5b6475">Pipeline Runnable</text>
+  <rect x="640" y="654" width="12" height="12" rx="2" fill="#fecaca"/>
+  <text x="658" y="665" font-size="11" fill="#5b6475">Error Path</text>
+  <rect x="740" y="654" width="12" height="12" rx="2" fill="#99f6e4"/>
+  <text x="758" y="665" font-size="11" fill="#5b6475">DB</text>
+  <rect x="520" y="676" width="12" height="12" rx="2" fill="#16a34a"/>
+  <text x="538" y="687" font-size="11" fill="#5b6475">Success Flow</text>
+  <rect x="640" y="676" width="12" height="12" rx="2" fill="#dc2626"/>
+  <text x="658" y="687" font-size="11" fill="#5b6475">Error Flow</text>
+  <rect x="740" y="676" width="12" height="12" rx="2" fill="#bfdbfe"/>
+  <text x="758" y="687" font-size="11" fill="#5b6475">Client</text>
+</svg>

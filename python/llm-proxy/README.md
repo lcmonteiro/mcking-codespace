@@ -1,33 +1,10 @@
 # LLM Proxy
 
-A production-ready LLM proxy built on **FastAPI + LangChain + LangGraph**.
+A production-ready LLM proxy built on **FastAPI + LangChain**.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        LLM Proxy                                 │
-│                                                                  │
-│  Client  ──Bearer token──▶  /v1/chat/completions               │
-│                              │                                   │
-│                    ┌─────────▼──────────────────────┐           │
-│                    │     LangGraph Pipeline          │           │
-│                    │                                 │           │
-│                    │  [validate_budget]              │           │
-│                    │       │                         │           │
-│                    │  [resolve_model]  ◀── ModelRegistry         │
-│                    │       │               (round-robin keys)    │
-│                    │  [prepare_messages]             │           │
-│                    │       │                         │           │
-│                    │  [call_llm]  ◀── LangChain ChatModel        │
-│                    │       │                         │           │
-│                    │  [record_usage]  ──▶ SQLite/PG  │           │
-│                    └─────────────────────────────────┘           │
-│                                                                  │
-│  Admin   ──ADMIN_KEY──▶  /admin/tokens                          │
-│                          /admin/provider-keys                    │
-│                          /admin/model-mappings                   │
-│                          /admin/usage                            │
-└─────────────────────────────────────────────────────────────────┘
-```
+<img src="docs/architecture-overview.svg" alt="System Architecture" width="800"/>
+
+<img src="docs/request-flow.svg" alt="Request Flow" width="880"/>
 
 ---
 
@@ -217,16 +194,23 @@ llm-proxy/
 ├── seed.py                        DB bootstrap
 ├── requirements.txt
 ├── .env.example
+├── docs/
+│   ├── architecture-overview.svg  System architecture diagram
+│   └── request-flow.svg           Request pipeline flow diagram
 ├── config/
 │   └── settings.py                Pydantic-settings config
 └── src/
     ├── db/
     │   ├── models.py              SQLAlchemy ORM (AccessToken, ProviderKey, …)
     │   └── session.py             Engine, session factory
+    ├── runnables/
+    │   ├── proxy_graph.py         Orchestrator (ProxyRunnable — 4-step pipeline)
+    │   ├── budget_auth.py         BudgetAuthRunnable — token auth + budget check
+    │   ├── budget_deduct.py       BudgetDeductRunnable — deduct + audit log
+    │   └── model_resolve.py       ModelResolveRunnable — resolve abstraction
     ├── services/
-    │   ├── proxy_graph.py         LangGraph pipeline (5-node state machine)
-    │   ├── model_registry.py      Abstraction → LangChain model resolver
-    │   └── budget.py              Token auth, budget checks, deduction
+    │   ├── model_registry.py      ModelRegistry + key rotation (admin compat)
+    │   └── budget.py              BudgetService + token hash utils (admin compat)
     ├── routes/
     │   ├── inference.py           /v1/* endpoints
     │   └── admin.py               /admin/* endpoints
