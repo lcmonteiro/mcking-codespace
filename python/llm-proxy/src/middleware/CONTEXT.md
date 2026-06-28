@@ -1,7 +1,7 @@
 # Middleware
 
-Middleware FastAPI para o LLM Proxy.
+FastAPI middleware for the LLM Proxy.
 
-## Ficheiros
+## Files
 
-- `auth.py` — autenticação e validação de tokens/API keys
+- `auth.py` — authentication and token/API key validation

@@ -1,12 +1,12 @@
 # C++ Projects
 
-Projetos C++ experimentais e de estudo.
+Experimental / study C++ projects.
 
-## Atual
+## Current
 
-- `gpt.cpp` — implementação de GPT (inferência) em C++ puro
-- `input.txt` — ficheiro de input para testes
+- `gpt.cpp` — GPT inference implementation in pure C++
+- `input.txt` — test input file
 
 ## Build
 
-Usar `..\scripts\build.ps1` que auto-detecta GCC/Clang/MSVC no Windows.
+Use `..\scripts\build.ps1` which auto-detects GCC/Clang/MSVC on Windows.

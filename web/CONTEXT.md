@@ -1,8 +1,8 @@
 # Web
 
-Projetos web — HTML/JS/CSS, diagramas e visualizações.
+Web projects — HTML/JS/CSS, diagrams, and visualizations.
 
-## Subpastas
+## Subfolders
 
-- `cellular-automata/` — visualização interativa de autómatos celulares em HTML/JS
-- `diagrams/` — diagramas SVG de arquitetura (draw.io exports)
+- `cellular-automata/` — interactive cellular automata visualization in HTML/JS
+- `diagrams/` — architecture SVG diagrams (draw.io exports)

@@ -1,8 +1,8 @@
 # Database Layer
 
-Camada de persistência do LLM Proxy. Usa SQLite + aiosqlite (async).
+Persistence layer for the LLM Proxy. Uses SQLite + aiosqlite (async).
 
-## Ficheiros
+## Files
 
-- `models.py` — definições das tabelas (SQLAlchemy declarative base)
-- `session.py` — gestão de sessão async para a base de dados
+- `models.py` — table definitions (SQLAlchemy declarative base)
+- `session.py` — async session management for the database

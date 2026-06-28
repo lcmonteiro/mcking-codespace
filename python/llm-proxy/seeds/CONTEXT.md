@@ -1,8 +1,8 @@
 # Seeds
 
-Dados iniciais para o LLM Proxy — mappings de modelos para providers e chaves de API dos providers.
+Initial data for the LLM Proxy — model-to-provider mappings and provider API keys.
 
-## Ficheiros
+## Files
 
-- `model_mappings.yaml` — mapeamento de nomes de modelos para providers suportados
-- `provider_keys.yaml` — chaves de API dos providers configurados
+- `model_mappings.yaml` — mapping of model names to supported providers
+- `provider_keys.yaml` — API keys for configured providers

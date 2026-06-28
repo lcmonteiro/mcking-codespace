@@ -1,3 +1,3 @@
 # Models
 
-Schemas e data models Pydantic para o LLM Proxy.
+Pydantic schemas and data models for the LLM Proxy.

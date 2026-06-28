@@ -1,10 +1,10 @@
 # Runnables
 
-Pipelines LangGraph para orquestração da inferência no LLM Proxy.
+LangGraph pipelines for inference orchestration in the LLM Proxy.
 
-## Ficheiros
+## Files
 
-- `proxy_graph.py` — grafo principal de proxy (entrada → auth → rate limit → model resolve → provider call → response)
-- `model_resolve.py` — nodo de resolução de modelo para provider
-- `budget_auth.py` — nodo de autenticação e verificação de orçamento
-- `budget_deduct.py` — nodo de dedução de custo após inferência
+- `proxy_graph.py` — main proxy graph (input → auth → rate limit → model resolve → provider call → response)
+- `model_resolve.py` — model-to-provider resolution node
+- `budget_auth.py` — authentication and budget check node
+- `budget_deduct.py` — cost deduction node after inference

@@ -1,7 +1,7 @@
 # Config
 
-Ficheiros de configuração para o LLM Proxy, carregados via Pydantic Settings.
+Configuration files for the LLM Proxy, loaded via Pydantic Settings.
 
-## Ficheiros
+## Files
 
-- `settings.py` — classe `Settings` com campos para server, database, security, rate limiting, provider key rotation, observability e CORS
+- `settings.py` — `Settings` class with fields for server, database, security, rate limiting, provider key rotation, observability, and CORS

@@ -1,7 +1,7 @@
 # Cellular Automata
 
-Visualização interativa de autómatos celulares em HTML/JS.
+Interactive cellular automata visualization in HTML/JS.
 
-## Ficheiros
+## Files
 
-- `index.html` — página única com simulador de autómatos celulares (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
+- `index.html` — single-page cellular automata simulator (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)

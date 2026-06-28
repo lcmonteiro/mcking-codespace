@@ -1,3 +1,3 @@
 # Diagrams
 
-Diagramas de arquitetura do projeto mcking-codespace, exportados do draw.io em SVG.
+Architecture diagrams for the mcking-codespace project, exported from draw.io in SVG.

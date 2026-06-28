@@ -1,3 +1,3 @@
 # Tests
 
-Testes para o LLM Proxy. Pasta preparada para pytest.
+Tests for the LLM Proxy. Directory ready for pytest.

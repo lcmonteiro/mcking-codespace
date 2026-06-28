@@ -1,8 +1,8 @@
 # Routes
 
-Endpoints da API do LLM Proxy (FastAPI routers).
+API endpoints for the LLM Proxy (FastAPI routers).
 
-## Ficheiros
+## Files
 
-- `admin.py` — endpoints de administração (gestão de chaves, tokens, usage)
-- `inference.py` — endpoints de inferência (LLM chat/completions)
+- `admin.py` — admin endpoints (key management, tokens, usage)
+- `inference.py` — inference endpoints (LLM chat/completions)

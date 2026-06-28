@@ -1,8 +1,8 @@
 # Scripts
 
-Build scripts, helpers e ferramentas de automação.
+Build scripts, helpers, and automation tools.
 
-## Ficheiros
+## Files
 
-- `build.ps1` — build helper que auto-detecta GCC/Clang/MSVC no Windows
-- `sync-github.js` — exporta cron jobs do gateway, git add/commit/push para o repo mcking-workspace
+- `build.ps1` — build helper that auto-detects GCC/Clang/MSVC on Windows
+- `sync-github.js` — exports gateway cron jobs, git add/commit/push for the mcking-workspace repo

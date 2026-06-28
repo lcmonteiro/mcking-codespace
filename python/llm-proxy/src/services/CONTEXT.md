@@ -1,8 +1,8 @@
 # Services
 
-Lógica de negócio do LLM Proxy.
+Business logic for the LLM Proxy.
 
-## Ficheiros
+## Files
 
-- `budget.py` — gestão de orçamento/rate limits por utilizador
-- `model_registry.py` — registo e resolução de modelos para providers
+- `budget.py` — budget and rate limit management per user
+- `model_registry.py` — model resolution for providers

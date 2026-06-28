@@ -1,25 +1,25 @@
 # LLM Proxy
 
-Proxy para LLM providers com rate limiting, rotação de chaves, autenticação e observabilidade.
+Proxy for LLM providers with rate limiting, key rotation, authentication, and observability.
 
 ## Stack
 
-- **FastAPI** — servidor HTTP assíncrono
-- **SQLite + aiosqlite** — persistência (rate limits, tokens, usage)
-- **Pydantic Settings** — configuração via env/.env
-- **LangGraph** — pipeline de inferência (runnables)
+- **FastAPI** — async HTTP server
+- **SQLite + aiosqlite** — persistence (rate limits, tokens, usage)
+- **Pydantic Settings** — configuration via env/.env
+- **LangGraph** — inference pipeline (runnables)
 
-## Estrutura
+## Structure
 
 ```
-config/     — configuração (Pydantic Settings)
-seeds/      — dados iniciais (model mappings, provider keys)
-src/        — código fonte
-  db/         — camada de base de dados
+config/     — configuration (Pydantic Settings)
+seeds/      — initial data (model mappings, provider keys)
+src/        — source code
+  db/         — database layer
   middleware/ — auth, rate limiting
   models/     — data models / schemas
   routes/     — API endpoints
   runnables/  — LangGraph pipelines
-  services/   — lógica de negócio
-tests/      — testes
+  services/   — business logic
+tests/      — tests
 ```

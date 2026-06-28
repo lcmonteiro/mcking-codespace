@@ -1,7 +1,7 @@
 # Mcking Context — Agent Notes
 
-Ficheiro de contexto para o agente (não para humanos).
-Guardar aqui o que aprender sobre o projeto e workflow, sem poluir o MEMORY.md do workspace principal.
+Context file for the agent (not for humans).
+Store learnings about the project and workflow here, without polluting the workspace's MEMORY.md.
 
 ## Repo
 
@@ -10,7 +10,7 @@ Guardar aqui o que aprender sobre o projeto e workflow, sem poluir o MEMORY.md d
 - Deploy key: `~/.ssh/id_ed25519_mcking`
 - Local: `C:\Users\monte\.openclaw\workspace\mcking-codespace\`
 
-## Estrutura
+## Structure
 
 ```
 cpp/       — C++ projects
@@ -21,24 +21,24 @@ scripts/   — Build scripts, helpers
 
 ## Workflow — Branches
 
-- Projetos longos/multidias → branch `inspiracao/<project-name>`
-- Se falhar/correr mal: apagar branch, sem danos
-- Se continuar: checkout do mesmo branch e seguir
-- Sessões únicas de inspiração livre: branch `inspiracao/YYYY-MM-DD` opcional
-- **Merge scrum-like**: quando um projeto tiver algo novo/funcional, fazer merge para `master` (main branch)
-  - Faz o merge do branch de inspiração → master
-  - O branch de inspiração continua a existir para trabalho em progresso
+- Long/multi-day projects → branch `inspiracao/<project-name>`
+- If it fails: delete the branch, no harm done
+- If it continues: checkout same branch and keep going
+- Single inspiration sessions: optional branch `inspiracao/YYYY-MM-DD`
+- **Scrum-like merge**: when a project has something new/functional, merge to `master` (main branch)
+  - Merge inspiration branch → master
+  - Inspiration branch stays for work in progress
 
 ## Build Helper
 
-- `scripts/build.ps1` — auto-detecta GCC/Clang/MSVC no Windows
+- `scripts/build.ps1` — auto-detects GCC/Clang/MSVC on Windows
 
 ## Windows Python Gotchas
 
-- **UTF-8 no stdout**: `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` — obrigatório para Unicode em terminais Windows
-- **Keyboard input**: `msvcrt.getwch()` para ler teclas; arrow keys vêm como `\xe0` + segunda tecla
+- **UTF-8 stdout**: `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` — required for Unicode in Windows terminals
+- **Keyboard input**: `msvcrt.getwch()` to read keys; arrow keys come as `\xe0` + second key
 
-## Terminal Visuals — Dicas
+## Terminal Visuals — Tips
 
 - **Smooth Mandelbrot**:
   ```python
@@ -47,12 +47,12 @@ scripts/   — Build scripts, helpers
   smooth = iteration + 1 - nu
   t = smooth / max_iter
   ```
-- **Color palettes**: função `(t: float) -> Tuple[int,int,int]` com t ∈ [0,1]; modular e permutável
-- **Density ASCII chars**: `. :-=+*#%@` — índice baseado em smooth value para textura
-- **Star twinkle**: `max(0, sin(t * speed + phase) ** 4)` para picos súbitos
+- **Color palettes**: function `(t: float) -> Tuple[int,int,int]` with t ∈ [0,1]; modular and swappable
+- **Density ASCII chars**: `. :-=+*#%@` — index based on smooth value for texture
+- **Star twinkle**: `max(0, sin(t * speed + phase) ** 4)` for sudden peaks
 
-## Projetos no Repo
+## Projects in Repo
 
-- `python/nocturne.py` — paisagem nocturna animada no terminal (estrelas, lua, estrelas cadentes, pirilampos)
-- `python/mandelbrot.py` — explorador interativo do Mandelbrot set (pan, zoom, 8 paletas, smooth coloring)
-- `python/cellular_automata.py` — playground de autómatos celulares com 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
+- `python/nocturne.py` — animated night landscape in terminal (stars, moon, shooting stars, fireflies)
+- `python/mandelbrot.py` — interactive Mandelbrot set explorer (pan, zoom, 8 palettes, smooth coloring)
+- `python/cellular_automata.py` — cellular automata playground with 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
