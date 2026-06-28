@@ -25,7 +25,7 @@ from src.db.models import (
     UsageLog,
 )
 from src.db.session import db_get
-from src.middleware.auth import require_admin
+from src.guards.auth import require_admin
 from src.services.budget import BudgetService
 
 logger = logging.getLogger(__name__)

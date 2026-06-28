@@ -1,5 +1,5 @@
 """
-Authentication middleware and dependencies.
+Authentication guards and dependencies.
 
 Provides Bearer token extraction from the Authorization header and an admin
 key guard for management endpoints.

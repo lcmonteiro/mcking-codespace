@@ -230,7 +230,7 @@ llm-proxy/
     ├── routes/
     │   ├── inference.py           /v1/* endpoints
     │   └── admin.py               /admin/* endpoints
-    └── middleware/
+    └── guards/
         └── auth.py                Bearer token extraction
 ```
 

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from src.db.models import ModelAbstraction, RequestStatus
 from src.db.session import db_contex
-from src.middleware.auth import extract_bearer_token
+from src.guards.auth import extract_bearer_token
 from src.services.model_registry import ModelRegistry
 from src.runnables.proxy_graph import run_proxy, run_proxy_stream
 
