@@ -46,9 +46,10 @@ from typing import List, Optional
 
 ## 4. Section Separators
 
-Use `=` separators with a description line between them.
 Top-level separators span the full 100-character line width.
-Indented separators (inside classes) are indented to match, staying within 100 chars.
+Sub-section separators (inside classes) use `# === Name ===` with 4-space indent.
+
+### Top-level
 
 ```python
 # ====================================================================================================
@@ -56,13 +57,13 @@ Indented separators (inside classes) are indented to match, staying within 100 c
 # ====================================================================================================
 ```
 
-Inside a class (4-space indent):
+### Sub-section (inside class, 4-space indent)
 
 ```python
- # ==================================================================================================
- # Sub-section Name
- # ==================================================================================================
+    # === Server ====================================================================================
 ```
+
+Pad the right side with `=` to reach column 100.
 
 ---
 
