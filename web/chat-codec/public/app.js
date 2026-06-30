@@ -103,9 +103,9 @@
     bSend.disabled = false;
     iMsg.focus();
 
-    addSysMsg('🔐 Room: ' + state.token + ' — ' +
+    addSystemMsg('🔐 Room: ' + state.token + ' — ' +
       (state.mesh.isHub ? 'you created it' : 'joined'));
-    addSysMsg('📡 Waiting for peers…');
+    addSystemMsg('📡 Waiting for peers…');
   }
 
   /* ─── Send ──────────────────────────────────────────── */
@@ -131,7 +131,7 @@
     for (const f of frames) state.mesh.broadcast(msgId, f);
 
     addOutgoing(text);
-    addSysMsg(`📤 ${frames.length} frame${frames.length > 1 ? 's' : ''}`);
+    addSystemMsg(`📤 ${frames.length} frame${frames.length > 1 ? 's' : ''}`);
   }
 
   /* ─── Incoming frame ────────────────────────────────── */
@@ -145,13 +145,20 @@
       const text = state.codec.get(msgId);
       if (text && text.length > 0) {
         addIncoming(text, 'Peer');
-        addSysMsg(`📥 Decoded (${count} frames)`);
+        addSystemMsg(`📥 Decoded (${count} frames)`);
       }
       state.codec.purge(msgId);
     }
   }
 
-  /* ─── Message display ───────────────────────────────── */
+  /* ─── Helpers ───────────────────────────────────────── */
+
+  function removeSysMsg(text) {
+    const items = elMsgs.querySelectorAll('.msg.system');
+    for (const el of items) {
+      if (el.textContent.includes(text)) el.remove();
+    }
+  }
 
   function addOutgoing(t) { appendMsg(t, state.nick, true); }
   function addIncoming(t, s) { appendMsg(t, s, false); }
