@@ -9,8 +9,9 @@
     "start:with": "node cli-chat.js --token"
   },
   "dependencies": {
+    "@roamhq/wrtc": "^0.10.0",
+    "minimist": "^1.2.8",
     "neo-blessed": "^0.2.0",
-    "peerjs": "^1.5.4",
-    "wrtc": "^0.4.7"
+    "peerjs": "^1.5.4"
   }
 }

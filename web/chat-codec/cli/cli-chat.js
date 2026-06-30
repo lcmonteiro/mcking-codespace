@@ -51,26 +51,17 @@ Requires codec_share.wasm compiled via wasm/build.sh.
 }
 
 /* ─── Polyfill WebRTC for Node.js ─────────────────────── */
+// PeerJS for Node.js needs window + WebRTC globals (uses wrtc)
+globalThis.window = globalThis;
 try {
-  const wrtc = require('wrtc');
-  global.RTCPeerConnection    = wrtc.RTCPeerConnection;
-  global.RTCSessionDescription = wrtc.RTCSessionDescription;
-  global.RTCIceCandidate      = wrtc.RTCIceCandidate;
-  global.MediaStream          = wrtc.MediaStream;
+  const wrtc = require('@roamhq/wrtc');
+  globalThis.RTCPeerConnection    = wrtc.RTCPeerConnection;
+  globalThis.RTCSessionDescription = wrtc.RTCSessionDescription;
+  globalThis.RTCIceCandidate      = wrtc.RTCIceCandidate;
+  globalThis.MediaStream          = wrtc.MediaStream;
 } catch (e) {
-  console.error('✖ wrtc not found. Run: npm install');
+  console.error('✖ @roamhq/wrtc not found. Run: npm install');
   process.exit(1);
-}
-
-/* ─── Polyfill WebRTC DataChannel binaryType for Node.js ─── */
-// wrtc uses 'nodebuffer' by default, map to 'arraybuffer' for compat
-if (!globalThis.DataChannel) {
-  const origCreateDC = RTCPeerConnection.prototype.createDataChannel;
-  RTCPeerConnection.prototype.createDataChannel = function(label, opts) {
-    const dc = origDC.call(this, label, opts);
-    // wrap send to accept ArrayBuffer
-    return dc;
-  };
 }
 
 const { Peer }   = require('peerjs');
