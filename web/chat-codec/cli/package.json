@@ -1,0 +1,16 @@
+{
+  "name": "chat-codec-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI version of CodecShare Chat (terminal TUI)",
+  "main": "cli-chat.js",
+  "scripts": {
+    "start": "node cli-chat.js",
+    "start:with": "node cli-chat.js --token"
+  },
+  "dependencies": {
+    "neo-blessed": "^0.2.0",
+    "peerjs": "^1.5.4",
+    "wrtc": "^0.4.7"
+  }
+}
