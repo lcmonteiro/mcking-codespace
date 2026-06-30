@@ -84,7 +84,7 @@ class ChatMesh {
       this.isHub = false;
       console.log('[webrtc] Peer joined:', id);
       const conn = peer.connect(hid, {
-        reliable: true, serialization: 'binary',
+        reliable: true,
         metadata: { nick: this.nick, type:'join-request' }
       });
       /* Setup but don't fire onPeerJoin yet — wait for open */
@@ -233,7 +233,7 @@ class ChatMesh {
       if (p.id === this.myId || this.conns.has(p.id)) continue;
       console.log('[webrtc] Connecting to mesh peer:', p.id);
       const conn = this.peer.connect(p.id, {
-        reliable: true, serialization: 'binary',
+        reliable: true,
         metadata: { nick: this.nick }
       });
       this._setupConn(conn, p.id, p.nick);

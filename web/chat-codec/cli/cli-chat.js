@@ -227,7 +227,7 @@ class CodecBridge {
     this._partials.delete(String(msgId));
     const mod = this.module;
 
-    mod._dec_create(e.lo, e.hi);
+    mod._dec_create(e.capacity ?? 32, e.lo, e.hi);
 
     let done = false;
     for (const frame of e.frames) {
@@ -260,8 +260,7 @@ class CodecBridge {
     mod._free(lenPtr);
     mod._dec_reset();
 
-    return result;
-    return null;
+    return result; // <-- decoder already returned above
   }
 
   purge(msgId) { this._partials.delete(String(msgId)); }
@@ -407,7 +406,7 @@ class ChatMesh {
       addSystemMsg(`Joined room -- ID: ${id}`);
       updateStatus(`Peer -- ${id.slice(0,12)}...`);
       const conn = peer.connect(hid, {
-        reliable: true, serialization: 'binary',
+        reliable: true,
         metadata: { nick: this.nick, type: 'join-request' }
       });
       this._setupConn(conn, hid, 'Hub');
@@ -523,7 +522,7 @@ class ChatMesh {
     for (const p of peers) {
       if (p.id === this.myId || this.conns.has(p.id)) continue;
       const conn = this.peer.connect(p.id, {
-        reliable: true, serialization: 'binary',
+        reliable: true,
         metadata: { nick: this.nick }
       });
       this._setupConn(conn, p.id, p.nick);
