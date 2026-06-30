@@ -9,11 +9,12 @@
  */
 
 const CHANNEL_COUNT = 4;
-const HUB_PREFIX    = 'cschat-';
+const HUB_PREFIX    = 'cschat';
 
 function hubId(token) {
   const h = hashSeed(token);
-  return HUB_PREFIX + h.toString(36).substring(0, 10);
+  /* toString(36) = [0-9a-z], safe for PeerJS */
+  return HUB_PREFIX + h.toString(36).substring(0, 12);
 }
 
 class ChatMesh {
