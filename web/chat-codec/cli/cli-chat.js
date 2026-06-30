@@ -3,28 +3,29 @@
  * cli-chat.js — CLI version of CodecShare Chat
  *
  * P2P encrypted chat in the terminal with fountain codes + WebRTC mesh.
+ * Requires codec_share.wasm (compiled via wasm/build.sh).
  *
  * Usage:
- *   node cli-chat.js --token myroom        # join room (random nick)
- *   node cli-chat.js --token myroom --nick M  # with nickname
- *   node cli-chat.js --token myroom --nick M --codec wasm  # use WASM
+ *   node cli-chat.js --token ***              # join room
+ *   node cli-chat.js --token *** --nick M     # with nickname
  *   node cli-chat.js --help
  *
  * Keys:
- *   Type message and press Enter to send
- *   Ctrl+C or Esc to leave/quit
- *   PageUp/PageDown to scroll messages
+ *   Enter         Send message
+ *   Esc / Ctrl+C  Leave room / quit
+ *   PgUp / PgDn   Scroll messages
  *
  * Dependencies (npm install):
  *   neo-blessed (TUI), peerjs (WebRTC), wrtc (Node.js WebRTC)
  */
 
 /* ─── Parse args ──────────────────────────────────────── */
-const args = require('minimist')(process.argv.slice(2), {
-  string: ['token', 'nick', 'codec'],
+const minimist = require('minimist');
+const args = minimist(process.argv.slice(2), {
+  string: ['token', 'nick'],
   boolean: ['help'],
-  alias: { t: 'token', n: 'nick', c: 'codec', h: 'help' },
-  default: { nick: '', codec: 'js' },
+  alias: { t: 'token', n: 'nick', h: 'help' },
+  default: { nick: '' },
 });
 
 if (args.help || !args.token) {
@@ -32,18 +33,19 @@ if (args.help || !args.token) {
 CodecShare Chat — P2P encrypted chat (CLI)
 
 Usage:
-  node cli-chat.js --token <room> [--nick <name>] [--codec js|wasm]
+  node cli-chat.js --token <room> [--nick <name>]
 
 Options:
   -t, --token  Room token (required)
   -n, --nick   Nickname (default: auto)
-  -c, --codec  Codec: js (default) or wasm
   -h, --help   Show this help
 
 Keys:
   Enter        Send message
   Esc / Ctrl+C Leave room / quit
   PgUp / PgDn  Scroll messages
+
+Requires codec_share.wasm compiled via wasm/build.sh.
 `);
   process.exit(0);
 }
@@ -60,6 +62,17 @@ try {
   process.exit(1);
 }
 
+/* ─── Polyfill WebRTC DataChannel binaryType for Node.js ─── */
+// wrtc uses 'nodebuffer' by default, map to 'arraybuffer' for compat
+if (!globalThis.DataChannel) {
+  const origCreateDC = RTCPeerConnection.prototype.createDataChannel;
+  RTCPeerConnection.prototype.createDataChannel = function(label, opts) {
+    const dc = origDC.call(this, label, opts);
+    // wrap send to accept ArrayBuffer
+    return dc;
+  };
+}
+
 const { Peer }   = require('peerjs');
 const blessed    = require('neo-blessed');
 const crypto     = require('crypto');
@@ -71,13 +84,13 @@ const fs         = require('fs');
    ═══════════════════════════════════════════════════════════ */
 
 const CHANNEL_COUNT = 4;
-const CHUNK_SIZE    = 65536;
 const TOKEN         = args.token;
 const NICK          = args.nick || `cli-${crypto.randomBytes(3).toString('hex')}`;
 const HUB_PREFIX    = 'cschat';
+const WASM_DIR      = path.join(__dirname, '..', 'public');
 
 /* ═══════════════════════════════════════════════════════════
-   HELPERS (portable from utils.js)
+   HELPERS
    ═══════════════════════════════════════════════════════════ */
 
 function hashSeed(str) {
@@ -103,12 +116,51 @@ function fmtTime(ts) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SIMPLE CODEC (JS fallback, portable from codec.js)
+   WASM CODEC BRIDGE (port of public/codec.js for Node.js)
    ═══════════════════════════════════════════════════════════ */
 
-class Codec {
+class CodecBridge {
   constructor() {
+    this.module    = null;
+    this.ready     = false;
     this._partials = new Map();
+  }
+
+  async init() {
+    if (this.ready) return;
+
+    const wasmJsPath = path.join(WASM_DIR, 'codec_share.js');
+    if (!fs.existsSync(wasmJsPath)) {
+      throw new Error(
+        `codec_share.js not found at ${wasmJsPath}\n` +
+        `Run: bash wasm/build.sh  (requires Emscripten)`
+      );
+    }
+
+    /* Load the Emscripten module (it's a function that returns a promise) */
+    const CodecShare = require(wasmJsPath);
+
+    /* Tell it where to find the .wasm file (same directory) */
+    const wasmBinaryFile = path.join(WASM_DIR, 'codec_share.wasm');
+    if (!fs.existsSync(wasmBinaryFile)) {
+      throw new Error(
+        `codec_share.wasm not found at ${wasmBinaryFile}\n` +
+        `Run: bash wasm/build.sh`
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      CodecShare({
+        locateFile: (file) => path.join(WASM_DIR, file),
+        onRuntimeInitialized: () => {
+          this.module = CodecShare;
+          this.ready  = true;
+          console.log('[codec] WASM ready, ping:', CodecShare._ping());
+          resolve();
+        },
+        onAbort: (msg) => reject(new Error('WASM abort: ' + msg)),
+      });
+    });
   }
 
   _tokenParts(s) {
@@ -120,23 +172,43 @@ class Codec {
   }
 
   encode(msg, tokenStr) {
+    if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
     const bytes = strToBytes(msg);
-    const seed  = hashSeed(tokenStr);
+    const { lo, hi } = this._tokenParts(tokenStr);
+    const mod = this.module;
+    const FS  = 64;
     const frames = [];
 
-    for (let i = 0; i < 10; i++) {
-      const f = Buffer.alloc(8 + bytes.length);
-      f.writeBigUInt64LE(seed, 0);
-      bytes.copy(f, 8);
-      frames.push(f);
+    const inPtr = mod._malloc(bytes.length);
+    mod.HEAPU8.set(bytes, inPtr);
+    const count = mod._enc_begin(inPtr, bytes.length, lo, hi, FS);
+    mod._free(inPtr);
+
+    if (count <= 0) {
+      console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
+      return frames;
     }
+
+    const lenPtr = mod._malloc(4);
+    for (let i = 0; i < count; i++) {
+      mod.setValue(lenPtr, 0, 'i32');
+      const ptr = mod._enc_next(lenPtr);
+      const len = mod.getValue(lenPtr, 'i32');
+      if (!ptr || len <= 0) break;
+      frames.push(Buffer.from(mod.HEAPU8.subarray(ptr, ptr + len)));
+    }
+    mod._free(lenPtr);
+    mod._enc_reset();
+
     return frames;
   }
 
   feed(msgId, frameData, tokenStr) {
+    if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
+    const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
     if (!this._partials.has(key)) {
-      this._partials.set(key, { frames: [], tokenStr });
+      this._partials.set(key, { frames: [], lo, hi });
     }
     this._partials.get(key).frames.push(Buffer.from(frameData));
     return this._partials.get(key).frames.length;
@@ -148,19 +220,52 @@ class Codec {
   }
 
   get(msgId) {
+    if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
     const e = this._partials.get(String(msgId));
     if (!e || !this.ready(msgId)) return null;
+
     this._partials.delete(String(msgId));
-    const frame = e.frames[0];
-    return frame.length > 8 ? bytesToStr(frame.slice(8)) : '';
+    const mod = this.module;
+
+    mod._dec_create(e.lo, e.hi);
+
+    let done = false;
+    for (const frame of e.frames) {
+      const ptr = mod._malloc(frame.length);
+      mod.HEAPU8.set(frame, ptr);
+      const status = mod._dec_feed(ptr, frame.length);
+      mod._free(ptr);
+
+      if (status > 0) {
+        done = true;
+        break;
+      }
+    }
+
+    if (!done) {
+      mod._dec_reset();
+      return null;
+    }
+
+    const lenPtr = mod._malloc(4);
+    mod.setValue(lenPtr, 0, 'i32');
+    const outPtr = mod._dec_get(lenPtr);
+    const outLen = mod.getValue(lenPtr, 'i32');
+
+    let result = null;
+    if (outPtr && outLen > 0) {
+      result = bytesToStr(Buffer.from(mod.HEAPU8.subarray(outPtr, outPtr + outLen)));
+      mod._mem_free(outPtr);
+    }
+    mod._free(lenPtr);
+    mod._dec_reset();
+
+    return result;
+    return null;
   }
 
-  purge(msgId) {
-    this._partials.delete(String(msgId));
-  }
+  purge(msgId) { this._partials.delete(String(msgId)); }
 }
-
-const codec = new Codec();
 
 /* ═══════════════════════════════════════════════════════════
    TUI SETUP (neo-blessed)
@@ -168,41 +273,26 @@ const codec = new Codec();
 
 const screen = blessed.screen({
   smartCSR: true,
-  title: `🧬 CodecShare Chat — ${TOKEN}`,
+  title: `CodecShare Chat -- ${TOKEN}`,
   dockBorders: true,
   fullUnicode: true,
 });
 
-/* ── Status bar ────────────────────────────────────────── */
 const statusBar = blessed.box({
-  top: 0,
-  left: 0,
-  right: 0,
-  height: 1,
-  style: { fg: 'grey', bg: 'black' },
-  tags: true,
+  top: 0, left: 0, right: 0, height: 1,
+  style: { fg: 'grey', bg: 'black' }, tags: true,
 });
 
-/* ── Message list ──────────────────────────────────────── */
 const msgBox = blessed.box({
-  top: 1,
-  left: 0,
-  right: 0,
-  bottom: 3,
-  scrollable: true,
-  alwaysScroll: true,
+  top: 1, left: 0, right: 0, bottom: 3,
+  scrollable: true, alwaysScroll: true,
   scrollbar: { style: { fg: 'grey' } },
   style: { fg: 'white', bg: 'black' },
-  padding: { left: 1, right: 1 },
-  tags: true,
+  padding: { left: 1, right: 1 }, tags: true,
 });
 
-/* ── Input area ────────────────────────────────────────── */
 const inputBox = blessed.textarea({
-  bottom: 0,
-  left: 0,
-  right: 0,
-  height: 3,
+  bottom: 0, left: 0, right: 0, height: 3,
   inputOnFocus: true,
   style: { fg: 'white', bg: 'black', focus: { bg: '#111122' } },
   border: { type: 'line', fg: '#6c5ce7' },
@@ -212,14 +302,11 @@ const inputBox = blessed.textarea({
 screen.append(statusBar);
 screen.append(msgBox);
 screen.append(inputBox);
-
 inputBox.focus();
 screen.render();
 
-/* ─── TUI helpers ───────────────────────────────────────── */
-
 function updateStatus(text) {
-  statusBar.setContent(` {bold}🧬${TOKEN}{/bold} │ ${text} │ {grey}${NICK}{/grey} `);
+  statusBar.setContent(` {bold}${TOKEN}{/bold} | ${text} | {grey}${NICK}{/grey} `);
   screen.render();
 }
 
@@ -227,8 +314,8 @@ function addMessage(text, sender, outgoing) {
   const tag = outgoing ? '{green-fg}' : '{cyan-fg}';
   const time = fmtTime(Date.now());
   const prefix = outgoing
-    ? ` {bold}${tag}▶{/} {/bold}`
-    : ` {bold}${tag}◀{/} {bold}{cyan-fg}${sender}{/}{/bold} `;
+    ? ` {bold}${tag}>{/} {/bold}`
+    : ` {bold}${tag}<{/} {bold}{cyan-fg}${sender}{/}{/bold} `;
   const line = `${prefix}{grey}(${time}){/} ${text}`;
   msgBox.pushLine(line);
   msgBox.setScrollPerc(100);
@@ -236,24 +323,21 @@ function addMessage(text, sender, outgoing) {
 }
 
 function addSystemMsg(text) {
-  const line = ` {yellow-fg}●{/} {grey}${text}{/}`;
-  msgBox.pushLine(line);
+  msgBox.pushLine(` {yellow-fg}*{/} {grey}${text}{/}`);
   msgBox.setScrollPerc(100);
   screen.render();
 }
 
 function addError(text) {
-  const line = ` {red-fg}✖{/} {bold}{red-fg}${text}{/}`;
-  msgBox.pushLine(line);
+  msgBox.pushLine(` {red-fg}X{/} {bold}{red-fg}${text}{/}`);
   msgBox.setScrollPerc(100);
   screen.render();
 }
 
-addSystemMsg('Starting CodecShare Chat…');
-updateStatus('Connecting…');
+addSystemMsg('Starting CodecShare Chat...');
 
 /* ═══════════════════════════════════════════════════════════
-   WEBRTC MESH (portable from webrtc.js)
+   WEBRTC MESH
    ═══════════════════════════════════════════════════════════ */
 
 class ChatMesh {
@@ -285,8 +369,8 @@ class ChatMesh {
         this.peer  = peer;
         this.myId  = id;
         this.isHub = true;
-        addSystemMsg(`✅ Room created (hub) — ID: ${id}`);
-        updateStatus(`Hub — ${id.slice(0,12)}…`);
+        addSystemMsg(`Room created (hub) -- ID: ${id}`);
+        updateStatus(`Hub -- ${id.slice(0,12)}...`);
         resolve(id);
       });
 
@@ -303,7 +387,7 @@ class ChatMesh {
       });
 
       setTimeout(() => {
-        if (!this.myId) { peer.destroy(); reject(new Error('Timeout connecting to signal server')); }
+        if (!this.myId) { peer.destroy(); reject(new Error('Timeout')); }
       }, 20000);
     });
   }
@@ -320,8 +404,8 @@ class ChatMesh {
       this.peer  = peer;
       this.myId  = id;
       this.isHub = false;
-      addSystemMsg(`🟢 Joined room — ID: ${id}`);
-      updateStatus(`Peer — ${id.slice(0,12)}…`);
+      addSystemMsg(`Joined room -- ID: ${id}`);
+      updateStatus(`Peer -- ${id.slice(0,12)}...`);
       const conn = peer.connect(hid, {
         reliable: true, serialization: 'binary',
         metadata: { nick: this.nick, type: 'join-request' }
@@ -342,27 +426,23 @@ class ChatMesh {
 
   _setupConn(conn, peerId, label) {
     if (this.conns.has(peerId)) return;
-
     const wrapper = { conn, peerId, label, channels: [] };
     this.conns.set(peerId, wrapper);
 
     conn.on('open', () => {
-      addSystemMsg(`🔗 ${label} connected`);
+      addSystemMsg(`${label} connected`);
       updateStatus(`${this.conns.size} peer${this.conns.size !== 1 ? 's' : ''}`);
       this._createParallelChannels(conn, peerId, wrapper);
       if (this.isHub) this._sendPeerList(peerId);
     });
 
     conn.on('data', (data) => {
-      if (typeof data === 'string') {
-        this._handleProtocolMsg(data, peerId);
-        return;
-      }
+      if (typeof data === 'string') { this._handleProtocolMsg(data); return; }
       this._forwardFrame(data);
     });
 
     conn.on('close', () => {
-      addSystemMsg(`🔌 ${label} disconnected`);
+      addSystemMsg(`${label} disconnected`);
       this.conns.delete(peerId);
       updateStatus(`${this.conns.size} peer${this.conns.size !== 1 ? 's' : ''}`);
     });
@@ -374,7 +454,7 @@ class ChatMesh {
     try {
       const msg = JSON.parse(jsonStr);
       if (msg.type === 'peer-list' && Array.isArray(msg.peers)) {
-        addSystemMsg(`📋 Mesh: ${msg.peers.length} peer${msg.peers.length !== 1 ? 's' : ''}`);
+        addSystemMsg(`Mesh: ${msg.peers.length} peer${msg.peers.length !== 1 ? 's' : ''}`);
         this.connectToPeers(msg.peers);
       }
     } catch (_) {}
@@ -393,7 +473,6 @@ class ChatMesh {
   _createParallelChannels(conn, peerId, wrapper) {
     const pc = conn._peerConnection;
     if (!pc) return;
-
     for (let i = 0; i < CHANNEL_COUNT; i++) {
       try {
         const dc = pc.createDataChannel(`cs-${i}`, {
@@ -404,7 +483,6 @@ class ChatMesh {
         wrapper.channels.push(dc);
       } catch (_) {}
     }
-
     pc.ondatachannel = (ev) => {
       const dc = ev.channel;
       if (!dc.label.startsWith('cs-')) return;
@@ -472,26 +550,29 @@ class ChatMesh {
    APP LOGIC
    ═══════════════════════════════════════════════════════════ */
 
-const mesh = new ChatMesh();
+const codec = new CodecBridge();
+const mesh  = new ChatMesh();
 
-/* ── Incoming frame ───────────────────────────────────── */
 mesh.onFrame = (msgId, frameData) => {
   const count = codec.feed(msgId, frameData, TOKEN);
   if (codec.ready(msgId)) {
     const text = codec.get(msgId);
     if (text && text.length > 0) {
       addMessage(text, 'Peer', false);
-      addSystemMsg(`📥 Decoded (${count} frames)`);
+      addSystemMsg(`Decoded (${count} frames)`);
     }
     codec.purge(msgId);
   }
 };
 
-/* ── Join room ────────────────────────────────────────── */
 (async () => {
   try {
+    updateStatus('Initializing codec...');
+    await codec.init();
+    addSystemMsg('Codec ready');
+
     await mesh.createPeer(NICK, TOKEN);
-    addSystemMsg('💬 Type your message and press Enter');
+    addSystemMsg('Type your message and press Enter');
     updateStatus(`${mesh.conns.size} peer${mesh.conns.size !== 1 ? 's' : ''}`);
   } catch (e) {
     addError(`Failed: ${e.message}`);
@@ -499,7 +580,6 @@ mesh.onFrame = (msgId, frameData) => {
   }
 })();
 
-/* ── Send message ─────────────────────────────────────── */
 inputBox.key('enter', () => {
   const text = inputBox.getValue().trim();
   if (!text) return;
@@ -512,31 +592,19 @@ inputBox.key('enter', () => {
 
   for (const f of frames) mesh.broadcast(msgId, f);
   addMessage(text, NICK, true);
-  addSystemMsg(`📤 ${frames.length} frame${frames.length > 1 ? 's' : ''}`);
+  addSystemMsg(`${frames.length} frame${frames.length > 1 ? 's' : ''} sent`);
 });
 
-/* ── Keybindings ───────────────────────────────────────── */
-
-// Ctrl+C / q / Esc → leave
 screen.key(['C-c', 'q', 'escape'], () => {
-  addSystemMsg('👋 Leaving room…');
+  addSystemMsg('Leaving room...');
   mesh.disconnect();
   setTimeout(() => process.exit(0), 500);
 });
 
-// Focus input on any key
-screen.key(['i', 'enter'], () => {
-  inputBox.focus();
-});
-
-// Scroll messages
+screen.key(['i', 'enter'], () => { inputBox.focus(); });
 msgBox.key(['pageup'], () => { msgBox.scroll(-10); screen.render(); });
 msgBox.key(['pagedown'], () => { msgBox.scroll(10); screen.render(); });
 
-// Quit on sigint
-process.on('SIGINT', () => {
-  mesh.disconnect();
-  process.exit(0);
-});
+process.on('SIGINT', () => { mesh.disconnect(); process.exit(0); });
 
 screen.render();

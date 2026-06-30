@@ -49,7 +49,7 @@ EM_FLAGS=(
     --closure 1
     -s EXPORTED_FUNCTIONS='[
         "_enc_begin","_enc_next","_enc_reset",
-        "_dec_create","_dec_feed","_dec_ready","_dec_get","_dec_reset",
+        "_dec_create","_dec_feed","_dec_get","_dec_reset",
         "_mem_free","_last_error","_ping",
         "_malloc","_free"
     ]'

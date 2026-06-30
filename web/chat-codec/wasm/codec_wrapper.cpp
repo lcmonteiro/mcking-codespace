@@ -1,15 +1,15 @@
 /**
  * codec_wrapper.cpp — Emscripten WASM wrapper for codec-share
  *
- * Uses codec-share's stream API (istream → ostream).
+ * Uses codec-share's stream API (istream/ostream).
  *
  * Encode (split + fountain code):
- *   istream.set(data, frameSize) → returns coded frame count
- *   For each: istream.pop() → coded frame
+ *   istream.set(data, frameSize) -> returns coded frame count
+ *   For each: istream.pop() -> coded frame
  *
  * Decode (collect + reassemble):
- *   ostream.push(frame) → returns 0 when complete
- *   ostream.get() → original data
+ *   ostream.push(frame) -> returns 0 while incomplete, non-zero when done
+ *   ostream.get() -> original data
  *
  * Token seed passed as two u32 values (lo+hi) for WASM FFI compat.
  */
@@ -19,6 +19,8 @@
 #include <cstring>
 #include <string>
 #include <memory>
+#include <random>
+#include <iostream>
 
 #include "include/stream.hpp"
 #include "include/token.hpp"
@@ -30,7 +32,7 @@ using Buffer = std::vector<uint8_t>;
 /* ── State ──────────────────────────────────────────────── */
 static std::unique_ptr<istream<Buffer>> g_is;
 static std::unique_ptr<ostream<Buffer>> g_os;
-static std::vector<Buffer>              g_encoded;   /* cached encoded frames */
+static std::vector<Buffer>              g_encoded;
 static size_t                           g_enc_pos{0};
 static std::string                      g_last_error;
 
@@ -49,11 +51,10 @@ static token::shared::Stamp make_token(uint32_t lo, uint32_t hi,
 extern "C" {
 
 /* ── Encode ─────────────────────────────────────────────────
- * Split a flat message into coded frames. Each frame is
- * self‑contained and can be decoded independently.
+ * Split a flat message into coded frames.
  *
  * enc_begin(data, len, token_lo, token_hi, frame_size)
- *   → number of coded frames (0 = error)
+ *   -> number of coded frames (0 = error)
  *
  * Call enc_next() repeatedly to get each frame. */
 EMSCRIPTEN_KEEPALIVE int enc_begin(const uint8_t* data, int len,
@@ -94,16 +95,16 @@ EMSCRIPTEN_KEEPALIVE void enc_reset() {
 
 /* ── Decode ─────────────────────────────────────────────────
  * Feed coded frames one at a time into an ostream.
- * When push returns non‑zero, data is ready.
  *
- * dec_create(token_lo, token_hi)
- * dec_feed(frame, len) → 1 = decode complete, 0 = need more, -1 = error
- * dec_ready() → 1 if decoded data available
- * dec_get(out_len) → decoded bytes (caller must mem_free) */
-EMSCRIPTEN_KEEPALIVE int dec_create(uint32_t token_lo, uint32_t token_hi) {
+ * dec_create(capacity, token_lo, token_hi)  -- init (capacity = suggested frames)
+ * dec_feed(frame, len) -> 1 = decode done, 0 = need more, -1 = error
+ * dec_get(out_len) -> decoded bytes (caller must mem_free) */
+EMSCRIPTEN_KEEPALIVE int dec_create(int capacity,
+                                    uint32_t token_lo, uint32_t token_hi) {
     try {
         auto token = make_token(token_lo, token_hi);
-        g_os = std::make_unique<ostream<Buffer>>(token);
+        g_os = std::make_unique<ostream<Buffer>>(
+            static_cast<size_t>(capacity > 0 ? capacity : 100), token);
         return 1;
     } catch (const std::exception& e) {
         g_last_error = e.what();
@@ -115,24 +116,21 @@ EMSCRIPTEN_KEEPALIVE int dec_feed(const uint8_t* data, int len) {
     if (!g_os) { g_last_error = "ostream not initialized"; return -1; }
     try {
         Buffer frame(data, data + len);
-        /* push returns 0 when complete, non-zero is total */
-        return g_os->push(std::move(frame)) == 0 ? 1 : 0;
+        auto result = g_os->push(std::move(frame));
+        /* push returns 0 while incomplete, non-zero (count) when done */
+        return result > 0 ? 1 : 0;
     } catch (const std::exception& e) {
         g_last_error = e.what();
         return -1;
     }
 }
 
-EMSCRIPTEN_KEEPALIVE int dec_ready() {
-    if (!g_os) return 0;
-    return g_os->full() ? 1 : 0;
-}
-
 EMSCRIPTEN_KEEPALIVE uint8_t* dec_get(int* out_len) {
-    if (!g_os || !g_os->full()) { *out_len = 0; return nullptr; }
+    if (!g_os) { *out_len = 0; return nullptr; }
     try {
         auto result = g_os->get();
-        auto* out   = (uint8_t*)malloc(result.size());
+        if (result.empty()) { *out_len = 0; return nullptr; }
+        auto* out = (uint8_t*)malloc(result.size());
         memcpy(out, result.data(), result.size());
         *out_len = static_cast<int>(result.size());
         return out;
