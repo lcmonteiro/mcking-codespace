@@ -1,0 +1,15 @@
+{
+  "name": "chat-codec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "P2P encrypted chat using codec-share fountain codes + WebRTC mesh",
+  "scripts": {
+    "build:wasm": "bash wasm/build.sh",
+    "start": "npx serve public/ -l 3000",
+    "dev": "npx live-server public/ --port=3000"
+  },
+  "devDependencies": {
+    "live-server": "^1.2",
+    "serve": "^14"
+  }
+}

@@ -1,0 +1,10 @@
+# WASM build artifacts
+public/codec_share.js
+public/codec_share.wasm
+public/codec_share.wasm.map
+
+# Build directory
+wasm/build/
+
+# Node
+node_modules/
