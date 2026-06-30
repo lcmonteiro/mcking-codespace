@@ -37,6 +37,19 @@ Se precisares de flags específicas:
 .\scripts\build.ps1 cpp\gpt.cpp -msvc    # 🏗️ MSVC
 ```
 
+## 🌐 GitHub Pages
+
+Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https://lcmonteiro.github.io/mcking-codespace/) via GitHub Actions.
+
+| Página | URL | Descrição |
+|---|---|---|
+| 💬 **CodecShare Chat** | [`/chat-codec/public/`](https://lcmonteiro.github.io/mcking-codespace/chat-codec/public/) | Chat P2P cifrado com fountain codes + WebRTC mesh |
+| 🧬 **Cellular Automata** | [`/cellular-automata/`](https://lcmonteiro.github.io/mcking-codespace/cellular-automata/) | Simulador interativo de autómatos celulares (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld) |
+| 📊 **Diagrams** | [`/diagrams/`](https://lcmonteiro.github.io/mcking-codespace/diagrams/) | Diagramas e whiteboards (SVG) |
+| 🏠 **Landing** | [`/`](https://lcmonteiro.github.io/mcking-codespace/) | Página inicial com links para todos os projetos |
+
+O deploy corre automaticamente em cada push para `master` (`.github/workflows/pages.yml`).
+
 ## 📐 Diagramas
 
 - `web/*.drawio` — editável em [diagrams.net](https://app.diagrams.net/)
