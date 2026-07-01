@@ -112,9 +112,12 @@ function fmtTime(ts) {
 
 class CodecBridge {
   constructor() {
-    this.module    = null;
-    this.ready     = false;
-    this._partials = new Map();
+    this.module     = null;
+    this.ready      = false;
+    this._partials  = new Map();
+    this._decoded   = new Set();
+    this._encHandle = null;
+    this._lenPtr    = null;
   }
 
   async init() {
@@ -165,9 +168,11 @@ class CodecBridge {
     const FS  = 64;
     const frames = [];
 
+    if (!this._encHandle) this._encHandle = mod._create_encoder();
+
     const inPtr = mod._malloc(bytes.length);
     mod.HEAPU8.set(bytes, inPtr);
-    const count = mod._enc_begin(inPtr, bytes.length, lo, hi, FS);
+    const count = mod._enc_set(this._encHandle, inPtr, bytes.length, lo, hi, FS);
     mod._free(inPtr);
 
     if (count <= 0) {
@@ -175,16 +180,14 @@ class CodecBridge {
       return { frames, capacity: 0, dataLen: 0 };
     }
 
-    const lenPtr = mod._malloc(4);
+    const lenPtr = this._lenPtr || (this._lenPtr = mod._malloc(4));
     for (let i = 0; i < count; i++) {
       mod.setValue(lenPtr, 0, 'i32');
-      const ptr = mod._enc_next(lenPtr);
-      const len = mod.getValue(lenPtr, 'i32');
-      if (!ptr || len <= 0) break;
-      frames.push(Buffer.from(mod.HEAPU8.subarray(ptr, ptr + len)));
+      const ptr = mod._enc_get(this._encHandle, lenPtr);
+      const flen = mod.getValue(lenPtr, 'i32');
+      if (!ptr || flen <= 0) break;
+      frames.push(Buffer.from(mod.HEAPU8.subarray(ptr, ptr + flen)));
     }
-    mod._free(lenPtr);
-    mod._enc_reset();
 
     const capacity = Math.floor((count - 3) / 2);
     return { frames, capacity, dataLen: bytes.length };
@@ -192,79 +195,73 @@ class CodecBridge {
 
   feed(msgId, frameData, tokenStr, capacity, dataLen) {
     if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
-    const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
+    if (this._decoded.has(key)) return;
+
     if (!this._partials.has(key)) {
-      this._partials.set(key, {
-        frames: [], lo, hi,
-        capacity: (capacity && capacity > 0) ? capacity : 32,
-        dataLen: (Number.isInteger(dataLen) && dataLen >= 0) ? dataLen : 0
-      });
+      const { lo, hi } = this._tokenParts(tokenStr);
+      const cap  = (capacity && capacity > 0) ? capacity : 32;
+      const dlen = (Number.isInteger(dataLen) && dataLen >= 0) ? dataLen : 0;
+      const decoderId = this.module._create_decoder();
+      this.module._dec_create(decoderId, cap, dlen, lo, hi);
+      this._partials.set(key, { frames: [], decoderId, capacity: cap, dataLen: dlen });
     }
     this._partials.get(key).frames.push(Buffer.from(frameData));
   }
 
-  /*
-   * Try to decode all accumulated frames for msgId.
-   * Returns { text, frameCount } on success, null if still accumulating.
-   * Only purges partials on successful decode.
-   */
   tryDecode(msgId) {
     if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
-    const e = this._partials.get(String(msgId));
+    const key = String(msgId);
+    const e = this._partials.get(key);
     if (!e || e.frames.length === 0) return null;
 
     const mod = this.module;
-
-    mod._dec_create(e.capacity ?? 32, e.lo, e.hi);
+    const did = e.decoderId;
 
     let done = false;
     for (const frame of e.frames) {
-      const ptr = mod._malloc(frame.length);
-      mod.HEAPU8.set(frame, ptr);
-      const status = mod._dec_feed(ptr, frame.length);
-      mod._free(ptr);
-
-      if (status > 0) {
-        done = true;
-        break;
-      }
+      const fp = mod._malloc(frame.length);
+      mod.HEAPU8.set(frame, fp);
+      const st = mod._dec_set(did, fp, frame.length);
+      mod._free(fp);
+      if (st > 0) { done = true; break; }
+      else if (st === -1) break;
     }
 
-    if (!done) {
-      mod._dec_reset();
-      return null;
-    }
+    if (!done) return null;
 
-    const lenPtr = mod._malloc(4);
-    mod.setValue(lenPtr, 0, 'i32');
-
-    let outPtr, outLen;
-    if (e.dataLen > 0) {
-      outPtr = mod._dec_get_ex(lenPtr, e.dataLen);
-      outLen = mod.getValue(lenPtr, 'i32');
-    } else {
-      outPtr = mod._dec_get(lenPtr);
-      outLen = mod.getValue(lenPtr, 'i32');
-    }
+    const lp = this._lenPtr || (this._lenPtr = mod._malloc(4));
+    mod.setValue(lp, 0, 'i32');
+    const outPtr = mod._dec_get(did, lp);
+    const outLen = mod.getValue(lp, 'i32');
 
     let result = null;
     if (outPtr && outLen > 0) {
-      const text = bytesToStr(Buffer.from(mod.HEAPU8.subarray(outPtr, outPtr + outLen)));
+      result = {
+        text: bytesToStr(Buffer.from(mod.HEAPU8.subarray(outPtr, outPtr + outLen))),
+        frameCount: e.frames.length
+      };
       mod._mem_free(outPtr);
-      result = { text, frameCount: e.frames.length };
     }
-    mod._free(lenPtr);
-    mod._dec_reset();
 
-    if (result) {
-      this._partials.delete(String(msgId));
-    }
+    mod._destroy_decoder(did);
+    this._partials.delete(key);
+    if (result) this._decoded.add(key);
 
     return result;
   }
 
-  purge(msgId) { this._partials.delete(String(msgId)); }
+  purge(msgId) {
+    const key = String(msgId);
+    const e = this._partials.get(key);
+    if (e) { this.module._destroy_decoder(e.decoderId); this._partials.delete(key); }
+  }
+
+  reset() {
+    for (const [k, e] of this._partials) this.module._destroy_decoder(e.decoderId);
+    this._partials.clear();
+    this._decoded.clear();
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

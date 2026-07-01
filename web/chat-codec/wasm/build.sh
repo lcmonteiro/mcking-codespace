@@ -49,8 +49,10 @@ EM_FLAGS=(
     -flto
     --closure 1
     -s EXPORTED_FUNCTIONS='[
-        "_enc_begin","_enc_next","_enc_reset",
-        "_dec_create","_dec_feed","_dec_get","_dec_reset",
+        "_create_encoder","_destroy_encoder",
+        "_enc_set","_enc_get","_enc_reset",
+        "_create_decoder","_destroy_decoder",
+        "_dec_create","_dec_set","_dec_get","_dec_reset",
         "_mem_free","_last_error","_ping",
         "_malloc","_free"
     ]'
