@@ -172,7 +172,7 @@ class CodecBridge {
 
     if (count <= 0) {
       console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
-      return { frames, capacity: 0 };
+      return { frames, capacity: 0, dataLen: 0 };
     }
 
     const lenPtr = mod._malloc(4);
@@ -187,16 +187,19 @@ class CodecBridge {
     mod._enc_reset();
 
     const capacity = Math.floor((count - 3) / 2);
-    return { frames, capacity };
+    return { frames, capacity, dataLen: bytes.length };
   }
 
-  feed(msgId, frameData, tokenStr, capacity) {
+  feed(msgId, frameData, tokenStr, capacity, dataLen) {
     if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
     const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
     if (!this._partials.has(key)) {
-      this._partials.set(key, { frames: [], lo, hi,
-        capacity: (capacity && capacity > 0) ? capacity : 32 });
+      this._partials.set(key, {
+        frames: [], lo, hi,
+        capacity: (capacity && capacity > 0) ? capacity : 32,
+        dataLen: (Number.isInteger(dataLen) && dataLen >= 0) ? dataLen : 0
+      });
     }
     this._partials.get(key).frames.push(Buffer.from(frameData));
   }
@@ -235,8 +238,15 @@ class CodecBridge {
 
     const lenPtr = mod._malloc(4);
     mod.setValue(lenPtr, 0, 'i32');
-    const outPtr = mod._dec_get(lenPtr);
-    const outLen = mod.getValue(lenPtr, 'i32');
+
+    let outPtr, outLen;
+    if (e.dataLen > 0) {
+      outPtr = mod._dec_get_ex(lenPtr, e.dataLen);
+      outLen = mod.getValue(lenPtr, 'i32');
+    } else {
+      outPtr = mod._dec_get(lenPtr);
+      outLen = mod.getValue(lenPtr, 'i32');
+    }
 
     let result = null;
     if (outPtr && outLen > 0) {
@@ -454,11 +464,12 @@ class ChatMesh {
     if (!this.onFrame) return;
     try {
       const buf = Buffer.from(data);
-      /* Format: [msgId 8B][capacity 4B LE][payload...] */
-      if (buf.length < 12) return;
+      /* Format: [msgId 8B][dataLen 4B LE][capacity 4B LE][payload...] */
+      if (buf.length < 16) return;
       const msgId = buf.readBigUInt64LE(0);
-      const capacity = buf.readUInt32LE(8);
-      this.onFrame(msgId, buf.slice(12), capacity);
+      const dataLen = buf.readUInt32LE(8);
+      const capacity = buf.readUInt32LE(12);
+      this.onFrame(msgId, buf.slice(16), capacity, dataLen);
     } catch (_) {}
   }
 
@@ -494,16 +505,18 @@ class ChatMesh {
     }
   }
 
-  broadcast(msgId, frames, capacity) {
+  broadcast(msgId, frames, capacity, dataLen) {
     if (this.conns.size === 0) return;
     if (!Number.isInteger(capacity) || capacity < 1) capacity = 32;
+    if (!Number.isInteger(dataLen) || dataLen < 0) dataLen = 0;
 
     for (const frameData of frames) {
-      const buf = Buffer.alloc(12 + frameData.length);
+      const buf = Buffer.alloc(16 + frameData.length);
       buf.writeBigUInt64LE(msgId, 0);
-      buf.writeUInt32LE(capacity, 8);
-      if (Buffer.isBuffer(frameData)) frameData.copy(buf, 12);
-      else Buffer.from(frameData).copy(buf, 12);
+      buf.writeUInt32LE(dataLen, 8);
+      buf.writeUInt32LE(capacity, 12);
+      if (Buffer.isBuffer(frameData)) frameData.copy(buf, 16);
+      else Buffer.from(frameData).copy(buf, 16);
 
       for (const [pid, w] of this.conns) {
         const chs = w.channels.filter(dc => dc.readyState === 'open');
@@ -550,8 +563,8 @@ class ChatMesh {
 const codec = new CodecBridge();
 const mesh  = new ChatMesh();
 
-mesh.onFrame = (msgId, frameData, capacity) => {
-  codec.feed(msgId, frameData, TOKEN, capacity);
+mesh.onFrame = (msgId, frameData, capacity, dataLen) => {
+  codec.feed(msgId, frameData, TOKEN, capacity, dataLen);
   const result = codec.tryDecode(msgId);
   if (result) {
     addMessage(result.text, 'Peer', false);
@@ -584,7 +597,7 @@ inputBox.key('enter', () => {
   const enc = codec.encode(text, TOKEN);
   if (!enc.frames.length) { addError('Encode failed'); return; }
 
-  mesh.broadcast(msgId, enc.frames, enc.capacity);
+  mesh.broadcast(msgId, enc.frames, enc.capacity, enc.dataLen);
   addMessage(text, NICK, true);
   addSystemMsg(`${frames.length} frame${frames.length > 1 ? 's' : ''} sent`);
 });

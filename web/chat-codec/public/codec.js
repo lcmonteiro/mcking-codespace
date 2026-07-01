@@ -84,7 +84,7 @@ class CodecBridge {
 
     if (count <= 0) {
       console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
-      return { frames, capacity: 0 };
+      return { frames, capacity: 0, dataLen: 0 };
     }
 
     const lenPtr = mod._malloc(4);
@@ -100,13 +100,15 @@ class CodecBridge {
     mod._enc_reset();
 
     const capacity = Math.floor((count - 3) / 2);
-    dbg('[ENCODE] done: frames=', frames.length, 'capacity=', capacity);
-    return { frames, capacity };
+    const dataLen = bytes.length;
+    dbg('[ENCODE] done: frames=', frames.length, 'capacity=', capacity,
+        'dataLen=', dataLen);
+    return { frames, capacity, dataLen };
   }
 
   /* ── Feed a coded frame ────────────────────────────── */
 
-  feed(msgId, frameData, tokenStr, capacity) {
+  feed(msgId, frameData, tokenStr, capacity, dataLen) {
     if (!this.ready || !this.module) {
       throw new Error('CodecBridge not initialized');
     }
@@ -120,16 +122,22 @@ class CodecBridge {
 
     const { lo, hi } = this._tokenParts(tokenStr);
     if (!this._partials.has(key)) {
-      /* Store capacity from first frame; use default if not provided */
+      /* Store capacity and dataLen from first frame */
       const cap = (capacity && capacity > 0) ? capacity : 32;
-      dbg('[FEED] new msgId=', msgId, 'capacity=', cap, 'lo=', lo, 'hi=', hi);
-      this._partials.set(key, { frames: [], lo, hi, capacity: cap });
+      const dlen = (Number.isInteger(dataLen) && dataLen >= 0) ? dataLen : 0;
+      dbg('[FEED] new msgId=', msgId, 'capacity=', cap, 'dataLen=', dlen,
+          'lo=', lo, 'hi=', hi);
+      this._partials.set(key, {
+        frames: [], lo, hi,
+        capacity: cap,
+        dataLen: dlen
+      });
     }
     const entry = this._partials.get(key);
     entry.frames.push(new Uint8Array(frameData));
     dbg('[FEED] msgId=', msgId, 'frameLen=', frameData.length,
         'totalFrames=', entry.frames.length, 'capacity=', entry.capacity,
-        'need=', entry.capacity, 'needType=', typeof entry.capacity);
+        'dataLen=', entry.dataLen);
   }
 
   /* ── Try to decode an accumulated message ──────────── */
@@ -191,12 +199,23 @@ class CodecBridge {
       return null;
     }
 
-    /* Get decoded data */
+    /* Get decoded data — use dataLen from transport protocol */
     const lenPtr = mod._malloc(4);
     mod.setValue(lenPtr, 0, 'i32');
-    const outPtr = mod._dec_get(lenPtr);
-    const outLen = mod.getValue(lenPtr, 'i32');
-    dbg('[DECODE] dec_get: outPtr=', !!outPtr, 'outLen=', outLen);
+
+    let outPtr, outLen;
+    if (e.dataLen > 0) {
+      /* Use dec_get_ex with transport-provided data length */
+      outPtr = mod._dec_get_ex(lenPtr, e.dataLen);
+      outLen = mod.getValue(lenPtr, 'i32');
+      dbg('[DECODE] dec_get_ex: outPtr=', !!outPtr, 'outLen=', outLen,
+          'dataLen=', e.dataLen);
+    } else {
+      /* Fallback to original dec_get (uses g_orig_data_len from last enc_begin) */
+      outPtr = mod._dec_get(lenPtr);
+      outLen = mod.getValue(lenPtr, 'i32');
+      dbg('[DECODE] dec_get (fallback): outPtr=', !!outPtr, 'outLen=', outLen);
+    }
 
     let result = null;
     if (outPtr && outLen > 0) {

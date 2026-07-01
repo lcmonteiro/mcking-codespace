@@ -38,6 +38,9 @@ static token::shared::Stamp make_token(uint32_t lo, uint32_t hi,
 
 extern "C" {
 
+/* Forward declarations */
+EMSCRIPTEN_KEEPALIVE uint8_t* dec_get_ex(int* out_len, int data_len);
+
 EMSCRIPTEN_KEEPALIVE int enc_begin(const uint8_t* data, int len,
                                    uint32_t token_lo, uint32_t token_hi,
                                    int frame_size) {
@@ -98,24 +101,28 @@ EMSCRIPTEN_KEEPALIVE int dec_feed(const uint8_t* data, int len) {
 }
 
 EMSCRIPTEN_KEEPALIVE uint8_t* dec_get(int* out_len) {
+    return dec_get_ex(out_len, g_orig_data_len);
+}
+
+EMSCRIPTEN_KEEPALIVE uint8_t* dec_get_ex(int* out_len, int data_len) {
     *out_len = 0;
     if (!g_dec) { g_last_error = "decoder not initialized"; return nullptr; }
     try {
         if (g_dec->size() == 0) { g_last_error = "no solved blocks"; return nullptr; }
 
-        auto data_len = static_cast<size_t>(g_orig_data_len);
-        if (data_len == 0) { g_last_error = "zero data length"; return nullptr; }
+        auto len = static_cast<size_t>(data_len > 0 ? data_len : g_orig_data_len);
+        if (len == 0) { g_last_error = "zero data length"; return nullptr; }
 
-        auto* out = (uint8_t*)malloc(data_len);
+        auto* out = (uint8_t*)malloc(len);
         if (!out) return nullptr;
         auto* outp = out;
-        size_t remaining = data_len;
+        size_t remaining = len;
 
         /* Extract from all solved blocks, in pivot order (= source order) */
         auto bit = g_dec->begin();
         auto eit = g_dec->end();
 
-        /* First block: skip 4-byte header that was multiplied by GF unity factor */
+        /* First block: skip 4-byte header */
         if (bit != eit) {
             auto& first = *bit;
             auto skip = std::min(first.size(), size_t(4));

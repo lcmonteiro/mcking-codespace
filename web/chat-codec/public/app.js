@@ -68,7 +68,8 @@
   async function joinRoom(token, nick) {
     const mesh = new ChatMesh();
 
-    mesh.onFrame = (msgId, frameData, capacity) => onFrame(msgId, frameData, capacity);
+    mesh.onFrame = (msgId, frameData, capacity, dataLen) =>
+      onFrame(msgId, frameData, capacity, dataLen);
 
     mesh.onPeerJoin = (pid, label) => {
       dPeers.textContent = mesh.conns.size + ' peer' + (mesh.conns.size !== 1 ? 's' : '');
@@ -131,8 +132,8 @@
     if (!enc || !enc.frames.length) return toast('Encode failed', 'error');
 
     console.log('[app] broadcast: msgId=', msgId, 'frames=', enc.frames.length,
-                'capacity=', enc.capacity);
-    state.mesh.broadcast(msgId, enc.frames, enc.capacity);
+                'capacity=', enc.capacity, 'dataLen=', enc.dataLen);
+    state.mesh.broadcast(msgId, enc.frames, enc.capacity, enc.dataLen);
 
     addOutgoing(text);
     addSystemMsg(`📤 ${enc.frames.length} frame${enc.frames.length > 1 ? 's' : ''}`);
@@ -140,10 +141,10 @@
 
   /* ─── Incoming frame ────────────────────────────────── */
 
-  function onFrame(msgId, frameData, capacity) {
+  function onFrame(msgId, frameData, capacity, dataLen) {
     if (!state.codec?.ready) return;
 
-    state.codec.feed(msgId, frameData, state.token, capacity);
+    state.codec.feed(msgId, frameData, state.token, capacity, dataLen);
 
     const result = state.codec.tryDecode(msgId);
     if (result) {

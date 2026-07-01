@@ -4,7 +4,7 @@
  * Hub = first joiner. Others connect to hub, get peer list, mesh.
  *
  * Parallel DataChannels for coded frames (unreliable, unordered).
- * Transport frame: [msgId (8B LE)][codec_payload...]
+ * Transport frame: [msgId 8B][dataLen 4B LE][capacity 4B LE][codec_payload...]
  * JSON messages (peer-list) sent on the reliable channel.
  */
 
@@ -163,19 +163,20 @@ class ChatMesh {
       const buf = data instanceof ArrayBuffer ? new Uint8Array(data)
                 : data instanceof Uint8Array    ? data
                 : new Uint8Array(data);
-      /* Format: [msgId 8B][capacity 4B][payload...] */
-      if (buf.length < 12) {
+      /* Format: [msgId 8B][dataLen 4B LE][capacity 4B LE][payload...] */
+      if (buf.length < 16) {
         console.warn('[webrtc] _forwardFrame: too short:', buf.length, 'from', peerId);
         return;
       }
-      const dv = new DataView(buf.buffer, buf.byteOffset, 12);
+      const dv = new DataView(buf.buffer, buf.byteOffset, 16);
       const msgId = dv.getBigUint64(0, true);
-      const capacity = dv.getUint32(8, true);
-      const payload = buf.slice(12);
+      const dataLen = dv.getUint32(8, true);
+      const capacity = dv.getUint32(12, true);
+      const payload = buf.slice(16);
       console.log('[webrtc] RECV frame: from=', peerId, 'msgId=', msgId,
                   'payloadLen=', payload.length, 'capacity=', capacity,
-                  'totalLen=', buf.length);
-      this.onFrame(msgId, payload, capacity);
+                  'dataLen=', dataLen, 'totalLen=', buf.length);
+      this.onFrame(msgId, payload, capacity, dataLen);
     } catch (e) {
       console.warn('[webrtc] _forwardFrame error:', e.message);
     }
@@ -221,24 +222,27 @@ class ChatMesh {
 
   /* ── Broadcast coded frames for a message ────────────── */
 
-  broadcast(msgId, frames, capacity) {
+  broadcast(msgId, frames, capacity, dataLen) {
     if (this.conns.size === 0) {
       console.warn('[webrtc] broadcast: no connections');
       return;
     }
     if (!Number.isInteger(capacity) || capacity < 1) capacity = 32;
+    if (!Number.isInteger(dataLen) || dataLen < 0) dataLen = 0;
 
     console.log('[webrtc] SEND: msgId=', msgId, 'frames=', frames.length,
-                'capacity=', capacity, 'conns=', this.conns.size);
+                'capacity=', capacity, 'dataLen=', dataLen,
+                'conns=', this.conns.size);
 
     for (let fi = 0; fi < frames.length; fi++) {
       const frameData = frames[fi];
-      /* Transport format: [msgId 8B][capacity 4B LE][payload...] */
-      const buf = new Uint8Array(12 + frameData.length);
-      const dv = new DataView(buf.buffer, 0, 12);
+      /* Transport format: [msgId 8B][dataLen 4B LE][capacity 4B LE][payload...] */
+      const buf = new Uint8Array(16 + frameData.length);
+      const dv = new DataView(buf.buffer, 0, 16);
       dv.setBigUint64(0, msgId, true);
-      dv.setUint32(8, capacity, true);
-      buf.set(frameData, 12);
+      dv.setUint32(8, dataLen, true);
+      dv.setUint32(12, capacity, true);
+      buf.set(frameData, 16);
 
       let sentCount = 0;
       for (const [pid, w] of this.conns) {
