@@ -1,4 +1,10 @@
-/* ─── utils.js — helpers ────────────────────────────────── */
+/* ─── utils.js — browser helpers ───────────────────────────
+ *
+ * Depends on: shared/hash.js (loaded first) which provides:
+ *   hashSeed, hubId, strToBytes, bytesToStr, fmtTime
+ *
+ * This file adds browser-specific helpers.
+ */
 
 /** Generate a random hex token (64 bits, 16 hex chars). */
 function randomToken() {
@@ -6,32 +12,6 @@ function randomToken() {
   crypto.getRandomValues(bytes);
   return bytes[0].toString(16).padStart(8, '0') +
          bytes[1].toString(16).padStart(8, '0');
-}
-
-/** Hash a string into a 64‑bit seed (FNV‑1a). */
-function hashSeed(str) {
-  let h1 = 0x811c9dc5, h2 = 0x6c62272e;
-  for (let i = 0; i < str.length; i++) {
-    const c = str.charCodeAt(i);
-    h1 ^= c; h1 = Math.imul(h1, 0x01000193);
-    h2 ^= c; h2 = Math.imul(h2, 0x01dfcd6d);
-  }
-  return (BigInt(h1) << 32n) | BigInt(h2 >>> 0);
-}
-
-/** Convert a string to a Uint8Array. */
-function strToBytes(s) {
-  return new TextEncoder().encode(s);
-}
-
-/** Convert a Uint8Array to a string. */
-function bytesToStr(b) {
-  return new TextDecoder().decode(b);
-}
-
-/** Format a timestamp. */
-function fmtTime(ts) {
-  return new Date(ts).toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
 }
 
 /** Show a toast notification (auto‑dismiss). */
@@ -58,5 +38,5 @@ function makePeerId(token, nick) {
   return 'cs-' + h.toString(36).substring(0, 12);
 }
 
-/* Expose to global scope for other modules */
-window._utils = { randomToken, hashSeed, strToBytes, bytesToStr, fmtTime, toast, addSystemMsg, makePeerId };
+/* Expose to global scope */
+window._utils = { randomToken, toast, addSystemMsg, makePeerId };
