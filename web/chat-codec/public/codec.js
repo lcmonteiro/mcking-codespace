@@ -34,19 +34,14 @@ class CodecBridge {
         'Ensure codec_share.js script is included before app.js.'
       );
     }
-    return new Promise((resolve, reject) => {
-      CodecShare({
-        onRuntimeInitialized: () => {
-          this.module = CodecShare;
-          this.ready  = true;
-          console.log('[codec] WASM ready, ping:', CodecShare._ping());
-          resolve();
-        },
-        onAbort: (msg) => {
-          reject(new Error('WASM abort: ' + msg));
-        },
-      });
+    const mod = await CodecShare({
+      onAbort: (msg) => {
+        throw new Error('WASM abort: ' + msg);
+      },
     });
+    this.module = mod;
+    this.ready  = true;
+    console.log('[codec] WASM ready, ping:', mod._ping());
   }
 
   /* ── Helpers ───────────────────────────────────────── */

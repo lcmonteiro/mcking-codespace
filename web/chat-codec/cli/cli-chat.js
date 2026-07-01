@@ -140,18 +140,13 @@ class CodecBridge {
       );
     }
 
-    return new Promise((resolve, reject) => {
-      CodecShare({
-        locateFile: (file) => path.join(WASM_DIR, file),
-        onRuntimeInitialized: () => {
-          this.module = CodecShare;
-          this.ready  = true;
-          console.log('[codec] WASM ready, ping:', CodecShare._ping());
-          resolve();
-        },
-        onAbort: (msg) => reject(new Error('WASM abort: ' + msg)),
-      });
+    const mod = await CodecShare({
+      locateFile: (file) => path.join(WASM_DIR, file),
+      onAbort: (msg) => { throw new Error('WASM abort: ' + msg); },
     });
+    this.module = mod;
+    this.ready  = true;
+    console.log('[codec] WASM ready, ping:', mod._ping());
   }
 
   _tokenParts(s) {
@@ -202,20 +197,18 @@ class CodecBridge {
       this._partials.set(key, { frames: [], lo, hi });
     }
     this._partials.get(key).frames.push(Buffer.from(frameData));
-    return this._partials.get(key).frames.length;
   }
 
-  ready(msgId) {
-    const e = this._partials.get(String(msgId));
-    return e ? e.frames.length >= 5 : false;
-  }
-
-  get(msgId) {
+  /*
+   * Try to decode all accumulated frames for msgId.
+   * Returns { text, frameCount } on success, null if still accumulating.
+   * Only purges partials on successful decode.
+   */
+  tryDecode(msgId) {
     if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
     const e = this._partials.get(String(msgId));
-    if (!e || !this.ready(msgId)) return null;
+    if (!e || e.frames.length === 0) return null;
 
-    this._partials.delete(String(msgId));
     const mod = this.module;
 
     mod._dec_create(e.capacity ?? 32, e.lo, e.hi);
@@ -245,13 +238,18 @@ class CodecBridge {
 
     let result = null;
     if (outPtr && outLen > 0) {
-      result = bytesToStr(Buffer.from(mod.HEAPU8.subarray(outPtr, outPtr + outLen)));
+      const text = bytesToStr(Buffer.from(mod.HEAPU8.subarray(outPtr, outPtr + outLen)));
       mod._mem_free(outPtr);
+      result = { text, frameCount: e.frames.length };
     }
     mod._free(lenPtr);
     mod._dec_reset();
 
-    return result; // <-- decoder already returned above
+    if (result) {
+      this._partials.delete(String(msgId));
+    }
+
+    return result;
   }
 
   purge(msgId) { this._partials.delete(String(msgId)); }
@@ -544,14 +542,11 @@ const codec = new CodecBridge();
 const mesh  = new ChatMesh();
 
 mesh.onFrame = (msgId, frameData) => {
-  const count = codec.feed(msgId, frameData, TOKEN);
-  if (codec.ready(msgId)) {
-    const text = codec.get(msgId);
-    if (text && text.length > 0) {
-      addMessage(text, 'Peer', false);
-      addSystemMsg(`Decoded (${count} frames)`);
-    }
-    codec.purge(msgId);
+  codec.feed(msgId, frameData, TOKEN);
+  const result = codec.tryDecode(msgId);
+  if (result) {
+    addMessage(result.text, 'Peer', false);
+    addSystemMsg(`Decoded (${result.frameCount} frames)`);
   }
 };
 
