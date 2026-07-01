@@ -139,15 +139,12 @@
   function onFrame(msgId, frameData) {
     if (!state.codec?.ready) return;
 
-    const count = state.codec.feed(msgId, frameData, state.token);
+    state.codec.feed(msgId, frameData, state.token);
 
-    if (state.codec.ready(msgId)) {
-      const text = state.codec.get(msgId);
-      if (text && text.length > 0) {
-        addIncoming(text, 'Peer');
-        addSystemMsg(`📥 Decoded (${count} frames)`);
-      }
-      state.codec.purge(msgId);
+    const result = state.codec.tryDecode(msgId);
+    if (result) {
+      addIncoming(result.text, 'Peer');
+      addSystemMsg(`📥 Decoded (${result.frameCount} frames)`);
     }
   }
 

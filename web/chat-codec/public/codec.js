@@ -106,30 +106,26 @@ class CodecBridge {
     if (!this._partials.has(key)) {
       this._partials.set(key, { frames: [], lo, hi, capacity: 32 });
     }
-    this._partials.get(key).frames.push(new Uint8Array(frameData));
-    return this._partials.get(key).frames.length;
+    const entry = this._partials.get(key);
+    entry.frames.push(new Uint8Array(frameData));
   }
 
-  /* ── Check if ready to decode ──────────────────────── */
-
-  ready(msgId) {
-    const e = this._partials.get(String(msgId));
-    return e ? e.frames.length >= 3 : false;
-  }
-
-  /* ── Get decoded message ───────────────────────────── */
-
-  get(msgId) {
+  /* ── Try to decode an accumulated message ──────────── */
+  /*
+   * After each new frame, try to decode everything accumulated so far.
+   * If decode succeeds, returns { text, frameCount } and cleans up.
+   * If not enough frames yet, returns null (keeps accumulating).
+   */
+  tryDecode(msgId) {
     if (!this.ready || !this.module) {
       throw new Error('CodecBridge not initialized');
     }
     const e = this._partials.get(String(msgId));
-    if (!e || !this.ready(msgId)) return null;
+    if (!e || e.frames.length === 0) return null;
 
-    this._partials.delete(String(msgId));
     const mod = this.module;
 
-    /* Feed all frames to the decoder */
+    /* Create decoder and feed ALL accumulated frames */
     mod._dec_create(e.capacity, e.lo, e.hi);
 
     let done = false;
@@ -157,14 +153,21 @@ class CodecBridge {
     const outLen = mod.getValue(lenPtr, 'i32');
 
     let result = null;
+    let text = null;
     if (outPtr && outLen > 0) {
-      result = bytesToStr(
+      text = bytesToStr(
         new Uint8Array(mod.HEAPU8.subarray(outPtr, outPtr + outLen))
       );
       mod._mem_free(outPtr);
+      result = { text, frameCount: e.frames.length };
     }
     mod._free(lenPtr);
     mod._dec_reset();
+
+    /* Clean up partials on success */
+    if (result) {
+      this._partials.delete(String(msgId));
+    }
 
     return result;
   }
