@@ -172,7 +172,7 @@ class CodecBridge {
 
     if (count <= 0) {
       console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
-      return frames;
+      return { frames, capacity: 0 };
     }
 
     const lenPtr = mod._malloc(4);
@@ -186,15 +186,17 @@ class CodecBridge {
     mod._free(lenPtr);
     mod._enc_reset();
 
-    return frames;
+    const capacity = Math.floor((count - 3) / 2);
+    return { frames, capacity };
   }
 
-  feed(msgId, frameData, tokenStr) {
+  feed(msgId, frameData, tokenStr, capacity) {
     if (!this.ready || !this.module) throw new Error('CodecBridge not initialized');
     const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
     if (!this._partials.has(key)) {
-      this._partials.set(key, { frames: [], lo, hi });
+      this._partials.set(key, { frames: [], lo, hi,
+        capacity: (capacity && capacity > 0) ? capacity : 32 });
     }
     this._partials.get(key).frames.push(Buffer.from(frameData));
   }
@@ -452,9 +454,11 @@ class ChatMesh {
     if (!this.onFrame) return;
     try {
       const buf = Buffer.from(data);
-      if (buf.length < 8) return;
+      /* Format: [msgId 8B][capacity 4B LE][payload...] */
+      if (buf.length < 12) return;
       const msgId = buf.readBigUInt64LE(0);
-      this.onFrame(msgId, buf.slice(8));
+      const capacity = buf.readUInt32LE(8);
+      this.onFrame(msgId, buf.slice(12), capacity);
     } catch (_) {}
   }
 
@@ -490,19 +494,24 @@ class ChatMesh {
     }
   }
 
-  broadcast(msgId, frameData) {
+  broadcast(msgId, frames, capacity) {
     if (this.conns.size === 0) return;
-    const buf = Buffer.alloc(8 + frameData.length);
-    buf.writeBigUInt64LE(msgId, 0);
-    if (Buffer.isBuffer(frameData)) frameData.copy(buf, 8);
-    else Buffer.from(frameData).copy(buf, 8);
+    if (!Number.isInteger(capacity) || capacity < 1) capacity = 32;
 
-    for (const [pid, w] of this.conns) {
-      const chs = w.channels.filter(dc => dc.readyState === 'open');
-      if (chs.length > 0) {
-        try { chs[Number(msgId % BigInt(chs.length))].send(buf); } catch (_) {}
-      } else if (w.conn?.open) {
-        try { w.conn.send(buf); } catch (_) {}
+    for (const frameData of frames) {
+      const buf = Buffer.alloc(12 + frameData.length);
+      buf.writeBigUInt64LE(msgId, 0);
+      buf.writeUInt32LE(capacity, 8);
+      if (Buffer.isBuffer(frameData)) frameData.copy(buf, 12);
+      else Buffer.from(frameData).copy(buf, 12);
+
+      for (const [pid, w] of this.conns) {
+        const chs = w.channels.filter(dc => dc.readyState === 'open');
+        if (chs.length > 0) {
+          try { chs[Number(msgId % BigInt(chs.length))].send(buf); } catch (_) {}
+        } else if (w.conn?.open) {
+          try { w.conn.send(buf); } catch (_) {}
+        }
       }
     }
   }
@@ -541,8 +550,8 @@ class ChatMesh {
 const codec = new CodecBridge();
 const mesh  = new ChatMesh();
 
-mesh.onFrame = (msgId, frameData) => {
-  codec.feed(msgId, frameData, TOKEN);
+mesh.onFrame = (msgId, frameData, capacity) => {
+  codec.feed(msgId, frameData, TOKEN, capacity);
   const result = codec.tryDecode(msgId);
   if (result) {
     addMessage(result.text, 'Peer', false);
@@ -572,10 +581,10 @@ inputBox.key('enter', () => {
   screen.render();
 
   const msgId  = mesh.nextMsgId();
-  const frames = codec.encode(text, TOKEN);
-  if (!frames.length) { addError('Encode failed'); return; }
+  const enc = codec.encode(text, TOKEN);
+  if (!enc.frames.length) { addError('Encode failed'); return; }
 
-  for (const f of frames) mesh.broadcast(msgId, f);
+  mesh.broadcast(msgId, enc.frames, enc.capacity);
   addMessage(text, NICK, true);
   addSystemMsg(`${frames.length} frame${frames.length > 1 ? 's' : ''} sent`);
 });

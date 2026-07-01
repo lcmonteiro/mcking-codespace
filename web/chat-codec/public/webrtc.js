@@ -163,10 +163,12 @@ class ChatMesh {
       const buf = data instanceof ArrayBuffer ? new Uint8Array(data)
                 : data instanceof Uint8Array    ? data
                 : new Uint8Array(data);
-      if (buf.length < 8) return;
-      const view = new DataView(buf.buffer, buf.byteOffset, 8);
-      const msgId = view.getBigUint64(0, true);
-      this.onFrame(msgId, buf.slice(8));
+      /* Format: [msgId 8B][capacity 4B][payload...] */
+      if (buf.length < 12) return;
+      const dv = new DataView(buf.buffer, buf.byteOffset, 12);
+      const msgId = dv.getBigUint64(0, true);
+      const capacity = dv.getUint32(8, true);
+      this.onFrame(msgId, buf.slice(12), capacity);
     } catch (_) {}
   }
 
@@ -208,20 +210,27 @@ class ChatMesh {
     }
   }
 
-  /* ── Broadcast a coded frame ────────────────────────── */
+  /* ── Broadcast coded frames for a message ────────────── */
 
-  broadcast(msgId, frameData) {
+  broadcast(msgId, frames, capacity) {
     if (this.conns.size === 0) return;
-    const buf = new Uint8Array(8 + frameData.length);
-    new DataView(buf.buffer, 0, 8).setBigUint64(0, msgId, true);
-    buf.set(frameData, 8);
+    if (!Number.isInteger(capacity) || capacity < 1) capacity = 32;
 
-    for (const [pid, w] of this.conns) {
-      const chs = w.channels.filter(dc => dc.readyState === 'open');
-      if (chs.length > 0) {
-        try { chs[Number(msgId % BigInt(chs.length))].send(buf.buffer); } catch (_) {}
-      } else if (w.conn?.open) {
-        try { w.conn.send(buf.buffer); } catch (_) {}
+    for (const frameData of frames) {
+      /* Transport format: [msgId 8B][capacity 4B LE][payload...] */
+      const buf = new Uint8Array(12 + frameData.length);
+      const dv = new DataView(buf.buffer, 0, 12);
+      dv.setBigUint64(0, msgId, true);
+      dv.setUint32(8, capacity, true);
+      buf.set(frameData, 12);
+
+      for (const [pid, w] of this.conns) {
+        const chs = w.channels.filter(dc => dc.readyState === 'open');
+        if (chs.length > 0) {
+          try { chs[Number(msgId % BigInt(chs.length))].send(buf.buffer); } catch (_) {}
+        } else if (w.conn?.open) {
+          try { w.conn.send(buf.buffer); } catch (_) {}
+        }
       }
     }
   }

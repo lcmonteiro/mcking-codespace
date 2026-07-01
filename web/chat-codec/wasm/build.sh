@@ -45,6 +45,7 @@ EM_FLAGS=(
     -s MAXIMUM_MEMORY=128MB
     -s FILESYSTEM=0
     -s SINGLE_FILE=0
+    -s DISABLE_EXCEPTION_CATCHING=0
     -flto
     --closure 1
     -s EXPORTED_FUNCTIONS='[
@@ -54,7 +55,7 @@ EM_FLAGS=(
         "_malloc","_free"
     ]'
 
-    -s EXPORTED_RUNTIME_METHODS='[ccall,getValue,setValue,HEAPU8,HEAP32]'
+    -s EXPORTED_RUNTIME_METHODS='[ccall,getValue,setValue,HEAPU8,HEAP32,UTF8ToString]'
     -I "$CODEC_DIR"
 )
 

@@ -73,7 +73,7 @@ class CodecBridge {
 
     if (count <= 0) {
       console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
-      return frames;
+      return { frames, capacity: 0 };
     }
 
     const lenPtr = mod._malloc(4);
@@ -87,19 +87,22 @@ class CodecBridge {
     mod._free(lenPtr);
     mod._enc_reset();
 
-    return frames;
+    const capacity = Math.floor((count - 3) / 2);
+    return { frames, capacity };
   }
 
   /* ── Feed a coded frame ────────────────────────────── */
 
-  feed(msgId, frameData, tokenStr) {
+  feed(msgId, frameData, tokenStr, capacity) {
     if (!this.ready || !this.module) {
       throw new Error('CodecBridge not initialized');
     }
     const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
     if (!this._partials.has(key)) {
-      this._partials.set(key, { frames: [], lo, hi, capacity: 32 });
+      /* Store capacity from first frame; use default if not provided */
+      this._partials.set(key, { frames: [], lo, hi,
+        capacity: (capacity && capacity > 0) ? capacity : 32 });
     }
     const entry = this._partials.get(key);
     entry.frames.push(new Uint8Array(frameData));
@@ -148,9 +151,8 @@ class CodecBridge {
     const outLen = mod.getValue(lenPtr, 'i32');
 
     let result = null;
-    let text = null;
     if (outPtr && outLen > 0) {
-      text = bytesToStr(
+      const text = bytesToStr(
         new Uint8Array(mod.HEAPU8.subarray(outPtr, outPtr + outLen))
       );
       mod._mem_free(outPtr);
