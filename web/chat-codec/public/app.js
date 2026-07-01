@@ -125,13 +125,17 @@
     iMsg.value = ''; iMsg.style.height = 'auto';
 
     const msgId  = state.mesh.nextMsgId();
+    console.log('[app] onSend: text=', text.substring(0, 50), 'len=', text.length,
+                'msgId=', msgId);
     const enc = state.codec.encode(text, state.token);
     if (!enc || !enc.frames.length) return toast('Encode failed', 'error');
 
+    console.log('[app] broadcast: msgId=', msgId, 'frames=', enc.frames.length,
+                'capacity=', enc.capacity);
     state.mesh.broadcast(msgId, enc.frames, enc.capacity);
 
     addOutgoing(text);
-    addSystemMsg(`📤 ${frames.length} frame${frames.length > 1 ? 's' : ''}`);
+    addSystemMsg(`📤 ${enc.frames.length} frame${enc.frames.length > 1 ? 's' : ''}`);
   }
 
   /* ─── Incoming frame ────────────────────────────────── */

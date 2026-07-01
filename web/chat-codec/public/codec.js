@@ -17,11 +17,17 @@
  *   (WASM FFI uses two u32 for uint64_t compat)
  */
 
+const DEBUG = true;
+function dbg(...args) {
+  if (DEBUG) console.log('[codec]', ...args, 'at', Date.now());
+}
+
 class CodecBridge {
   constructor() {
     this.module    = null;
     this.ready     = false;
     this._partials = new Map(); /* key -> { frames: [], lo, hi, capacity } */
+    this._msgCount = 0;
   }
 
   /* ── Init WASM ─────────────────────────────────────── */
@@ -65,11 +71,15 @@ class CodecBridge {
     const mod = this.module;
     const FS  = 64;
     const frames = [];
+    const msgId = ++this._msgCount;
+    dbg('[ENCODE] msg=', msg.substring(0, 50), 'bytes=', bytes.length, 'lo=', lo, 'hi=', hi);
 
     const inPtr = mod._malloc(bytes.length);
     mod.HEAPU8.set(bytes, inPtr);
     const count = mod._enc_begin(inPtr, bytes.length, lo, hi, FS);
     mod._free(inPtr);
+
+    dbg('[ENCODE] enc_begin count=', count);
 
     if (count <= 0) {
       console.warn('[codec] encode failed:', mod.UTF8ToString(mod._last_error()));
@@ -83,11 +93,13 @@ class CodecBridge {
       const len = mod.getValue(lenPtr, 'i32');
       if (!ptr || len <= 0) break;
       frames.push(new Uint8Array(mod.HEAPU8.subarray(ptr, ptr + len)));
+      dbg('[ENCODE] frame', i, 'len=', len);
     }
     mod._free(lenPtr);
     mod._enc_reset();
 
     const capacity = Math.floor((count - 3) / 2);
+    dbg('[ENCODE] done: frames=', frames.length, 'capacity=', capacity);
     return { frames, capacity };
   }
 
@@ -101,11 +113,15 @@ class CodecBridge {
     const key = String(msgId);
     if (!this._partials.has(key)) {
       /* Store capacity from first frame; use default if not provided */
-      this._partials.set(key, { frames: [], lo, hi,
-        capacity: (capacity && capacity > 0) ? capacity : 32 });
+      const cap = (capacity && capacity > 0) ? capacity : 32;
+      dbg('[FEED] new msgId=', msgId, 'capacity=', cap, 'lo=', lo, 'hi=', hi);
+      this._partials.set(key, { frames: [], lo, hi, capacity: cap });
     }
     const entry = this._partials.get(key);
     entry.frames.push(new Uint8Array(frameData));
+    dbg('[FEED] msgId=', msgId, 'frameLen=', frameData.length,
+        'totalFrames=', entry.frames.length, 'capacity=', entry.capacity,
+        'need=', entry.capacity, 'needType=', typeof entry.capacity);
   }
 
   /* ── Try to decode an accumulated message ──────────── */
@@ -118,28 +134,51 @@ class CodecBridge {
     if (!this.ready || !this.module) {
       throw new Error('CodecBridge not initialized');
     }
-    const e = this._partials.get(String(msgId));
-    if (!e || e.frames.length === 0) return null;
+    const key = String(msgId);
+    const e = this._partials.get(key);
+    if (!e || e.frames.length === 0) {
+      dbg('[DECODE] msgId=', msgId, 'no partial data');
+      return null;
+    }
 
     const mod = this.module;
+    dbg('[DECODE] msgId=', msgId, 'frames=', e.frames.length,
+        'capacity=', e.capacity, 'firstFrameLen=', e.frames[0].length);
 
     /* Create decoder and feed ALL accumulated frames */
-    mod._dec_create(e.capacity, e.lo, e.hi);
+    const created = mod._dec_create(e.capacity, e.lo, e.hi);
+    dbg('[DECODE] dec_create=', created, 'capacity=', e.capacity);
+    if (!created) {
+      console.warn('[codec] dec_create failed:', mod.UTF8ToString(mod._last_error()));
+      return null;
+    }
 
     let done = false;
+    let feedCount = 0;
     for (const frame of e.frames) {
+      feedCount++;
       const ptr = mod._malloc(frame.length);
       mod.HEAPU8.set(frame, ptr);
       const status = mod._dec_feed(ptr, frame.length);
       mod._free(ptr);
+      dbg('[DECODE] feed', feedCount, '/', e.frames.length, 'status=',
+          status, 'len=', frame.length);
 
       if (status > 0) {
         done = true;
+        dbg('[DECODE] decode succeeded after', feedCount, 'frames');
         break;
+      } else if (status === -1) {
+        const err = mod.UTF8ToString(mod._last_error());
+        console.warn('[codec] dec_feed error:', err);
+        dbg('[DECODE] feed ERROR:', err);
+        /* Continue anyway — maybe next frame fixes it */
       }
     }
 
     if (!done) {
+      dbg('[DECODE] not enough frames yet (', e.frames.length, '/',
+          e.capacity, ')');
       mod._dec_reset();
       return null;
     }
@@ -149,21 +188,32 @@ class CodecBridge {
     mod.setValue(lenPtr, 0, 'i32');
     const outPtr = mod._dec_get(lenPtr);
     const outLen = mod.getValue(lenPtr, 'i32');
+    dbg('[DECODE] dec_get: outPtr=', !!outPtr, 'outLen=', outLen);
 
     let result = null;
     if (outPtr && outLen > 0) {
-      const text = bytesToStr(
-        new Uint8Array(mod.HEAPU8.subarray(outPtr, outPtr + outLen))
-      );
+      const rawBytes = new Uint8Array(mod.HEAPU8.subarray(outPtr, outPtr + outLen));
+      dbg('[DECODE] raw first bytes (hex):', Array.from(rawBytes.slice(0, 8))
+          .map(b => b.toString(16).padStart(2, '0')).join(' '));
+      const text = bytesToStr(rawBytes);
       mod._mem_free(outPtr);
       result = { text, frameCount: e.frames.length };
+      dbg('[DECODE] SUCCESS textLen=', text.length, 'frameCount=', e.frames.length);
+    } else if (outPtr && outLen === 0) {
+      /* Empty message (e.g. 0 bytes) is valid */
+      result = { text: '', frameCount: e.frames.length };
+      mod._mem_free(outPtr);
+      dbg('[DECODE] SUCCESS empty message');
+    } else {
+      const err = mod.UTF8ToString(mod._last_error());
+      dbg('[DECODE] dec_get failed:', err);
     }
     mod._free(lenPtr);
     mod._dec_reset();
 
     /* Clean up partials on success */
     if (result) {
-      this._partials.delete(String(msgId));
+      this._partials.delete(key);
     }
 
     return result;

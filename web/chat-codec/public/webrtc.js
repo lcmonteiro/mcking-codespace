@@ -164,12 +164,21 @@ class ChatMesh {
                 : data instanceof Uint8Array    ? data
                 : new Uint8Array(data);
       /* Format: [msgId 8B][capacity 4B][payload...] */
-      if (buf.length < 12) return;
+      if (buf.length < 12) {
+        console.warn('[webrtc] _forwardFrame: too short:', buf.length, 'from', peerId);
+        return;
+      }
       const dv = new DataView(buf.buffer, buf.byteOffset, 12);
       const msgId = dv.getBigUint64(0, true);
       const capacity = dv.getUint32(8, true);
-      this.onFrame(msgId, buf.slice(12), capacity);
-    } catch (_) {}
+      const payload = buf.slice(12);
+      console.log('[webrtc] RECV frame: from=', peerId, 'msgId=', msgId,
+                  'payloadLen=', payload.length, 'capacity=', capacity,
+                  'totalLen=', buf.length);
+      this.onFrame(msgId, payload, capacity);
+    } catch (e) {
+      console.warn('[webrtc] _forwardFrame error:', e.message);
+    }
   }
 
   /* ── Parallel DataChannels ──────────────────────────── */
@@ -213,10 +222,17 @@ class ChatMesh {
   /* ── Broadcast coded frames for a message ────────────── */
 
   broadcast(msgId, frames, capacity) {
-    if (this.conns.size === 0) return;
+    if (this.conns.size === 0) {
+      console.warn('[webrtc] broadcast: no connections');
+      return;
+    }
     if (!Number.isInteger(capacity) || capacity < 1) capacity = 32;
 
-    for (const frameData of frames) {
+    console.log('[webrtc] SEND: msgId=', msgId, 'frames=', frames.length,
+                'capacity=', capacity, 'conns=', this.conns.size);
+
+    for (let fi = 0; fi < frames.length; fi++) {
+      const frameData = frames[fi];
       /* Transport format: [msgId 8B][capacity 4B LE][payload...] */
       const buf = new Uint8Array(12 + frameData.length);
       const dv = new DataView(buf.buffer, 0, 12);
@@ -224,13 +240,31 @@ class ChatMesh {
       dv.setUint32(8, capacity, true);
       buf.set(frameData, 12);
 
+      let sentCount = 0;
       for (const [pid, w] of this.conns) {
         const chs = w.channels.filter(dc => dc.readyState === 'open');
         if (chs.length > 0) {
-          try { chs[Number(msgId % BigInt(chs.length))].send(buf.buffer); } catch (_) {}
+          try {
+            const dc = chs[Number(msgId % BigInt(chs.length))];
+            dc.send(buf.buffer);
+            sentCount++;
+          } catch (e) {
+            console.warn('[webrtc] parallel send fail to', pid, ':', e.message);
+          }
         } else if (w.conn?.open) {
-          try { w.conn.send(buf.buffer); } catch (_) {}
+          try {
+            w.conn.send(buf.buffer);
+            sentCount++;
+          } catch (e) {
+            console.warn('[webrtc] reliable send fail to', pid, ':', e.message);
+          }
+        } else {
+          console.warn('[webrtc] no open channel for', pid);
         }
+      }
+      if (fi === 0 || fi === frames.length - 1) {
+        console.log('[webrtc] frame', fi, '/', frames.length,
+                    'sent to', sentCount, 'peers, len=', frameData.length);
       }
     }
   }
