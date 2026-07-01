@@ -29,9 +29,14 @@
   /* ─── Init codec (WASM or fallback) ─────────────────── */
 
   (async () => {
-    state.codec = new CodecBridge();
-    await state.codec.init();
-    dCodec.textContent = state.codec._fallback ? '⚡ JS fallback' : '🟢 WASM';
+    try {
+      state.codec = new CodecBridge();
+      await state.codec.init();
+      dCodec.textContent = '🟢 WASM';
+    } catch (e) {
+      console.error('[app] codec init:', e);
+      dCodec.textContent = '❌ ' + e.message;
+    }
   })();
 
   /* ─── Random token ──────────────────────────────────── */

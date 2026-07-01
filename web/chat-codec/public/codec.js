@@ -32,11 +32,6 @@ function dbg(...args) {
  *   - decGet(id) → uses per-instance dataLen
  */
 
-const DEBUG = true;
-function dbg(...args) {
-  if (DEBUG) console.log('[codec]', ...args, 'at', Date.now());
-}
-
 class CodecBridge {
   constructor() {
     this.module     = null;
