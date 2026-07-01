@@ -125,12 +125,31 @@ class ChatMesh {
     });
 
     conn.on('data', (data) => {
-      /* String → JSON protocol */
+      /* String → JSON protocol (serialization:'json') */
       if (typeof data === 'string') {
         this._handleProtocolMsg(data, peerId);
         return;
       }
-      /* Binary → coded frame */
+      /* Binary — default serialization (binary-utf8) sends everything as binary.
+         Try JSON first; only forward as coded frame if that fails. */
+      const buf = data instanceof ArrayBuffer ? new Uint8Array(data)
+                : data instanceof Uint8Array    ? data
+                : new Uint8Array(data);
+      if (buf.length >= 2) {
+        const str = new TextDecoder().decode(buf);
+        try {
+          const msg = JSON.parse(str);
+          if (msg && msg.type) {
+            console.log('[webrtc] JSON from binary:', msg.type, peerId);
+            if (msg.type === 'peer-list' && Array.isArray(msg.peers)) {
+              console.log('[webrtc] Received peer list:', msg.peers);
+              if (this._onPeerList) this._onPeerList(msg.peers);
+            }
+            return;
+          }
+        } catch (_) {}
+      }
+      /* Not JSON → coded frame */
       this._forwardFrame(data, peerId);
     });
 
@@ -216,7 +235,7 @@ class ChatMesh {
       .map(id => ({ id, nick: this.conns.get(id)?.label || id.slice(0, 8) }));
     const wrapper = this.conns.get(remoteId);
     if (wrapper && wrapper.conn?.open) {
-      wrapper.conn.send(JSON.stringify({ type: 'peer-list', peers }));
+      wrapper.conn.send({ type: 'peer-list', peers });
     }
   }
 
