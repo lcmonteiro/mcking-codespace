@@ -195,6 +195,7 @@
   function leave() {
     state.inRoom = false;
     if (state.mesh) { state.mesh.disconnect(); state.mesh = null; }
+    if (state.codec) { state.codec.reset(); }
     elMsgs.innerHTML = '<div class="msg system">Left the room.</div>';
     sChat.classList.remove('active');
     sJoin.classList.add('active');

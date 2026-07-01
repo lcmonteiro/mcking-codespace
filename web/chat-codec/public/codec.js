@@ -27,6 +27,7 @@ class CodecBridge {
     this.module    = null;
     this.ready     = false;
     this._partials = new Map(); /* key -> { frames: [], lo, hi, capacity } */
+    this._decoded  = new Set(); /* msgIds already decoded & displayed */
     this._msgCount = 0;
   }
 
@@ -109,8 +110,15 @@ class CodecBridge {
     if (!this.ready || !this.module) {
       throw new Error('CodecBridge not initialized');
     }
-    const { lo, hi } = this._tokenParts(tokenStr);
     const key = String(msgId);
+
+    /* Skip if already decoded this message */
+    if (this._decoded.has(key)) {
+      dbg('[FEED] SKIP — msgId already decoded:', msgId);
+      return;
+    }
+
+    const { lo, hi } = this._tokenParts(tokenStr);
     if (!this._partials.has(key)) {
       /* Store capacity from first frame; use default if not provided */
       const cap = (capacity && capacity > 0) ? capacity : 32;
@@ -211,15 +219,32 @@ class CodecBridge {
     mod._free(lenPtr);
     mod._dec_reset();
 
-    /* Clean up partials on success */
+    /* Mark as decoded so future frames for this msgId are skipped */
     if (result) {
       this._partials.delete(key);
+      this._decoded.add(key);
+      dbg('[DECODE] added to _decoded set, size=', this._decoded.size);
+
+      /* Prune old entries (keep last 100) */
+      if (this._decoded.size > 200) {
+        const entries = [...this._decoded];
+        this._decoded = new Set(entries.slice(-100));
+        dbg('[DECODE] pruned _decoded set to 100 entries');
+      }
     }
 
     return result;
   }
 
   purge(msgId) { this._partials.delete(String(msgId)); }
+
+  /* ── Reset state (e.g. when leaving a room) ────────── */
+
+  reset() {
+    this._partials.clear();
+    this._decoded.clear();
+    dbg('[CODEC] state reset');
+  }
 }
 
 window.CodecBridge = CodecBridge;
