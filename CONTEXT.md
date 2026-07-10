@@ -8,7 +8,7 @@ Store learnings about the project and workflow here, without polluting the works
 - `lcmonteiro/mcking-codespace`
 - SSH: `github.com-mcking` (~/.ssh/config)
 - Deploy key: `~/.ssh/id_ed25519_mcking`
-- Local: `C:\Users\monte\.openclaw\workspace\mcking-codespace\`
+- Local: `/home/monteiro/.openclaw/workspace/mcking-codespace/`
 
 ## Structure
 
@@ -31,8 +31,7 @@ scripts/   — Build scripts, helpers
 
 ## Build Helper
 
-- `scripts/build.ps1` — auto-detects GCC/Clang/MSVC on Windows
-
+- `scripts/build.sh` — build helper that auto-detects GCC/Clang/MSVC on Linux/WSL2
 ## Windows Python Gotchas
 
 - **UTF-8 stdout**: `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` — required for Unicode in Windows terminals
@@ -54,5 +53,6 @@ scripts/   — Build scripts, helpers
 ## Projects in Repo
 
 - `python/nocturne.py` — animated night landscape in terminal (stars, moon, shooting stars, fireflies)
+- `python/plasma.py` — classic demoscene plasma effect with 5 palettes (Lava, Ocean, Neon, Forest, Ice), interactive controls, auto-cycle
 - `python/mandelbrot.py` — interactive Mandelbrot set explorer (pan, zoom, 8 palettes, smooth coloring)
 - `python/cellular_automata.py` — cellular automata playground with 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)

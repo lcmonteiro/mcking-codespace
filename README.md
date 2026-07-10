@@ -20,21 +20,21 @@ Código, scripts, diagramas — tudo centralizado aqui. Autosync com GitHub.
 ./run.sh python/script.py      # 🐍 Python
 ./run.sh web/index.html        # 🌐 abre no browser
 ./run.sh scripts/sync-github.js # 📦 Node.js
-./run.sh scripts/build.ps1     # ⚡ PowerShell
+./run.sh scripts/build.sh       # ⚡ Build script (bash)
 ```
 
 Deteta a extensão e escolhe o interpretador certo. Sem stress.
 
-**Suporta:** `cpp cc cxx c` `py` `js ts` `sh ps1` `go rs` `html`
+**Suporta:** `cpp cc cxx c` `py` `js ts` `sh` `go rs` `html`
 
 ## ⚙️ Compilar C++ (manual)
 
 Se precisares de flags específicas:
 
-```powershell
-.\scripts\build.ps1 cpp\gpt.cpp          # 🔧 build só
-.\scripts\build.ps1 cpp\gpt.cpp -run     # 🔧🚀 build + run
-.\scripts\build.ps1 cpp\gpt.cpp -msvc    # 🏗️ MSVC
+```bash
+./scripts/build.sh cpp/gpt.cpp          # 🔧 build só
+./scripts/build.sh cpp/gpt.cpp -run     # 🔧🚀 build + run
+./scripts/build.sh cpp/gpt.cpp -clang   # 🏗️ Clang
 ```
 
 ## 🌐 GitHub Pages
@@ -44,6 +44,7 @@ Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https:/
 | Página | URL | Descrição |
 |---|---|---|
 | 💬 **CodecShare Chat** | [`/chat-codec/public/`](https://lcmonteiro.github.io/mcking-codespace/chat-codec/public/) | Chat P2P cifrado com fountain codes + WebRTC mesh |
+| 🔮 **Plasma** | _(terminal-only)_ | Classic demoscene plasma effect — 5 palettes, sine-wave layers, interactive controls |
 | 🧬 **Cellular Automata** | [`/cellular-automata/`](https://lcmonteiro.github.io/mcking-codespace/cellular-automata/) | Simulador interativo de autómatos celulares (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld) |
 | 📊 **Diagrams** | [`/diagrams/`](https://lcmonteiro.github.io/mcking-codespace/diagrams/) | Diagramas e whiteboards (SVG) |
 | 🏠 **Landing** | [`/`](https://lcmonteiro.github.io/mcking-codespace/) | Página inicial com links para todos os projetos |
