@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Life</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#08080a;color:#c8c8d0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;display:flex;height:100vh;user-select:none}
+
+  /* ─── Canvas ─── */
+  #canvas{flex:1;display:block;cursor:crosshair;touch-action:none}
+
+  /* ─── HUD ─── */
+  #hud{position:fixed;top:16px;right:16px;background:rgba(8,8,12,.85);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px;min-width:200px;z-index:10;transition:transform .3s,opacity .3s}
+  #hud h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#666;margin-bottom:12px}
+  #hud.hidden{transform:translateX(280px);opacity:0;pointer-events:none}
+  #toggle-hud{position:fixed;top:16px;right:16px;z-index:11;background:rgba(8,8,12,.7);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#888;cursor:pointer;padding:6px 10px;font-size:13px;display:none}
+  #hud.hidden~#toggle-hud{display:block}
+
+  .ctrl{margin-bottom:10px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin-bottom:2px}
+  .ctrl label span{color:#ddd;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;background:#222;border-radius:2px;outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#6c6cf0;cursor:pointer;border:none}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .btn{flex:1;min-width:50px;padding:5px 8px;font-size:11px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:rgba(255,255,255,.04);color:#aaa;cursor:pointer;transition:all .15s;text-align:center}
+  .btn:hover{background:rgba(108,108,240,.15);border-color:#6c6cf0;color:#fff}
+  .btn.active{background:rgba(108,108,240,.25);border-color:#6c6cf0;color:#fff}
+  .btn-icon{font-size:15px;line-height:1;width:32px;min-width:32px;padding:5px 0}
+  .sep{border:none;border-top:1px solid rgba(255,255,255,.06);margin:8px 0}
+
+  /* ─── Info overlay ─── */
+  #info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-size:11px;color:#444;z-index:5;pointer-events:none;text-align:center}
+  #info kbd{background:rgba(255,255,255,.06);padding:1px 6px;border-radius:3px;font-family:inherit;font-size:10px}
+  .fps{color:#555;margin-left:12px}
+
+  /* ─── Responsive ─── */
+  @media(max-width:600px){#hud{top:8px;right:8px;padding:12px;min-width:170px;font-size:11px}}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <h2>Particle Life</h2>
+
+  <div class="ctrl">
+    <label>Speed <span id="speedVal">1.0</span></label>
+    <input type="range" id="speed" min="0" max="3" step="0.05" value="1.0">
+  </div>
+  <div class="ctrl">
+    <label>Radius <span id="radiusVal">60</span></label>
+    <input type="range" id="radius" min="10" max="150" step="1" value="60">
+  </div>
+  <div class="ctrl">
+    <label>Force <span id="forceVal">1.0</span></label>
+    <input type="range" id="force" min="0" max="3" step="0.05" value="1.0">
+  </div>
+  <div class="ctrl">
+    <label>Trail <span id="trailVal">0.92</span></label>
+    <input type="range" id="trail" min="0.7" max="1" step="0.005" value="0.92">
+  </div>
+  <div class="ctrl">
+    <label>Particles <span id="countVal">800</span></label>
+    <input type="range" id="count" min="100" max="3000" step="50" value="800">
+  </div>
+
+  <hr class="sep">
+
+  <div class="row">
+    <button class="btn active" data-preset="0">Slime</button>
+    <button class="btn" data-preset="1">Cells</button>
+    <button class="btn" data-preset="2">Vortex</button>
+    <button class="btn" data-preset="3">Spiral</button>
+    <button class="btn" data-preset="4">Chaos</button>
+    <button class="btn" data-preset="5">Balance</button>
+  </div>
+
+  <hr class="sep">
+
+  <div class="row">
+    <button class="btn btn-icon" id="glowBtn" title="Toggle glow">✨</button>
+    <button class="btn btn-icon" id="pauseBtn" title="Pause">⏸</button>
+    <button class="btn btn-icon" id="resetBtn" title="Reset">↺</button>
+  </div>
+</div>
+
+<button id="toggle-hud">☰</button>
+
+<div id="info">
+  Click/drag to spawn &bull; <kbd>Space</kbd> pause &bull; <kbd>G</kbd> glow &bull; <kbd>R</kbd> reset
+  <span class="fps" id="fps">0 FPS</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Particle Life — Mcking Codespace
+// ═══════════════════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// ─── Sizing ───
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── Species colors ───
+const SPECIES = 4;
+const COLORS = [
+  [1.0, 0.25, 0.25],  // red
+  [0.25, 0.75, 1.0],  // cyan
+  [0.25, 1.0, 0.35],  // green
+  [1.0, 0.30, 0.85],  // magenta
+];
+
+// ─── Force matrix presets ───
+// Each is a SPECIES×SPECIES matrix of [-1..1] values
+const PRESETS = [
+  // 0 — Slime (classic slime mold)
+  {name:'Slime', M:[
+    [ 1.0, -0.5,  0.2,  0.0],
+    [-0.5,  1.0, -0.3,  0.1],
+    [ 0.2, -0.3,  1.0, -0.4],
+    [ 0.0,  0.1, -0.4,  1.0],
+  ]},
+  // 1 — Cells (cellular-like division)
+  {name:'Cells', M:[
+    [-0.3,  0.8,  0.0, -0.2],
+    [ 0.8, -0.4,  0.3,  0.0],
+    [ 0.0,  0.3, -0.5,  0.7],
+    [-0.2,  0.0,  0.7, -0.3],
+  ]},
+  // 2 — Vortex (swirling)
+  {name:'Vortex', M:[
+    [ 0.0,  0.9, -0.6, -0.3],
+    [-0.3,  0.0,  0.9, -0.6],
+    [-0.6, -0.3,  0.0,  0.9],
+    [ 0.9, -0.6, -0.3,  0.0],
+  ]},
+  // 3 — Spiral (galactic)
+  {name:'Spiral', M:[
+    [ 0.1,  0.7, -0.8,  0.3],
+    [ 0.3,  0.1,  0.7, -0.8],
+    [-0.8,  0.3,  0.1,  0.7],
+    [ 0.7, -0.8,  0.3,  0.1],
+  ]},
+  // 4 — Chaos (turbulent)
+  {name:'Chaos', M:[
+    [ 0.8, -0.9,  0.5, -0.7],
+    [-0.9,  0.6, -0.8,  0.4],
+    [ 0.5, -0.8,  0.7, -0.6],
+    [-0.7,  0.4, -0.6,  0.9],
+  ]},
+  // 5 — Balance (stable clusters)
+  {name:'Balance', M:[
+    [ 0.3, -0.6,  0.0, -0.2],
+    [-0.6,  0.3, -0.2,  0.0],
+    [ 0.0, -0.2,  0.3, -0.6],
+    [-0.2,  0.0, -0.6,  0.3],
+  ]},
+];
+
+// ─── State ───
+let particles = [];
+let speciesCounts = new Array(SPECIES).fill(0);
+let currentPreset = 0;
+let paused = false;
+let glow = true;
+let speed = 1.0;
+let radius = 60;
+let maxForce = 1.0;
+let trail = 0.92;
+let targetCount = 800;
+let mouseX = -1, mouseY = -1;
+let mouseDown = false;
+
+// FPS tracking
+let frameCount = 0;
+let lastFpsTime = 0;
+
+// ─── Particle ───
+function createParticle(x, y, species) {
+  const angle = Math.random() * 2 * Math.PI;
+  return {
+    x: x ?? Math.random() * W,
+    y: y ?? Math.random() * H,
+    vx: Math.cos(angle) * 0.5,
+    vy: Math.sin(angle) * 0.5,
+    species: species ?? Math.floor(Math.random() * SPECIES),
+  };
+}
+
+// ─── Spatial grid (for O(n) neighbor lookup) ───
+let grid = new Map();
+let GRID_CELL = 0;
+
+function buildGrid() {
+  grid.clear();
+  GRID_CELL = radius * 1.5;
+  for (const p of particles) {
+    const key = (Math.floor(p.x / GRID_CELL) << 16) | Math.floor(p.y / GRID_CELL);
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(p);
+  }
+}
+
+function getNeighbors(x, y) {
+  const cx = Math.floor(x / GRID_CELL);
+  const cy = Math.floor(y / GRID_CELL);
+  const neighbors = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const key = ((cx + dx) << 16) | (cy + dy);
+      const cell = grid.get(key);
+      if (cell) neighbors.push(...cell);
+    }
+  }
+  return neighbors;
+}
+
+// ─── Force function ───
+// The magic: particles of same species attract, different species
+// attract or repel based on the force matrix
+function force(r, a) {
+  // r: normalized distance [0..1], a: matrix value [-1..1]
+  if (r < 0.1) return 0; // too close, ignore
+  if (r > 1) return 0;
+  // Classic particle life force curve
+  return a * (1 - r) / (r + 0.1) * 0.5;
+}
+
+function update() {
+  buildGrid();
+  const M = PRESETS[currentPreset].M;
+  const dt = speed * 0.4;
+  const rMax = radius;
+  const fMax = maxForce;
+
+  for (const p of particles) {
+    const neighbors = getNeighbors(p.x, p.y);
+    let fx = 0, fy = 0;
+
+    for (const q of neighbors) {
+      if (q === p) continue;
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist >= rMax || dist < 0.01) continue;
+      const r = dist / rMax;
+      const a = M[p.species][q.species];
+      const f = force(r, a) * fMax;
+      fx += (dx / dist) * f;
+      fy += (dy / dist) * f;
+    }
+
+    // Mouse interaction: attract if mouse is down
+    if (mouseDown && mouseX >= 0) {
+      const dx = mouseX - p.x;
+      const dy = mouseY - p.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist > 5 && dist < 200) {
+        const fMouse = 0.8 / (dist * 0.02 + 1);
+        fx += (dx / dist) * fMouse * speed;
+        fy += (dy / dist) * fMouse * speed;
+      }
+    }
+
+    // Damping
+    const damping = 0.5;
+    p.vx = (p.vx + fx * dt) * damping;
+    p.vy = (p.vy + fy * dt) * damping;
+
+    // Clamp velocity
+    const v = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+    if (v > 6) { p.vx = (p.vx/v)*6; p.vy = (p.vy/v)*6; }
+
+    // Update position
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // Wrap around (with margin for grid)
+    if (p.x < -radius) p.x = W + radius;
+    if (p.x > W + radius) p.x = -radius;
+    if (p.y < -radius) p.y = H + radius;
+    if (p.y > H + radius) p.y = -radius;
+  }
+}
+
+// ─── Rendering ───
+function render() {
+  // Trail: semi-transparent fill over previous frame
+  ctx.fillStyle = `rgba(8,8,12,${1 - trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Pre-blur pass for glow
+  if (glow) {
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = 'rgba(255,255,255,0.15)';
+  }
+
+  // Group by species for batched rendering
+  const batches = [];
+  for (let s = 0; s < SPECIES; s++) batches[s] = [];
+
+  for (const p of particles) {
+    if (p.x < 0 || p.x > W || p.y < 0 || p.y > H) continue;
+    batches[p.species].push(p);
+  }
+
+  for (let s = 0; s < SPECIES; s++) {
+    const c = COLORS[s];
+    const alpha = glow ? 0.7 : 0.9;
+    ctx.fillStyle = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},${alpha})`;
+
+    if (glow) {
+      ctx.shadowColor = `rgba(${c[0]*255|0},${c[1]*255|0},${c[2]*255|0},0.4)`;
+    }
+
+    for (const p of batches[s]) {
+      ctx.fillRect(p.x - 0.5, p.y - 0.5, 2, 2);
+    }
+  }
+
+  ctx.shadowBlur = 0;
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById('fps').textContent = `${frameCount} FPS`;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// ─── Particle count management ───
+function adjustCount(n) {
+  targetCount = n;
+  while (particles.length < targetCount) {
+    const p = createParticle();
+    particles.push(p);
+    speciesCounts[p.species]++;
+  }
+  while (particles.length > targetCount) {
+    const p = particles.pop();
+    speciesCounts[p.species]--;
+  }
+}
+
+function resetParticles(count) {
+  particles = [];
+  speciesCounts = new Array(SPECIES).fill(0);
+  for (let i = 0; i < count; i++) {
+    const p = createParticle();
+    particles.push(p);
+    speciesCounts[p.species]++;
+  }
+}
+
+// ─── Preset buttons ───
+function setPreset(idx) {
+  currentPreset = idx;
+  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('active', +b.dataset.preset === idx));
+  // Ensure minimum particles for visual density
+  if (particles.length < 500) adjustCount(500);
+}
+
+// ─── Apply preset buttons ───
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', () => setPreset(+btn.dataset.preset));
+});
+
+// ─── Sliders ───
+function slider(id, valId, cb) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const v = +el.value;
+    val.textContent = v.toFixed(id === 'count' ? 0 : id === 'trail' ? 2 : 1);
+    cb(v);
+  });
+}
+
+slider('speed', 'speedVal', v => speed = v);
+slider('radius', 'radiusVal', v => { radius = v; });
+slider('force', 'forceVal', v => maxForce = v);
+slider('trail', 'trailVal', v => trail = v);
+slider('count', 'countVal', v => adjustCount(v));
+
+// ─── Buttons ───
+document.getElementById('glowBtn').addEventListener('click', () => { glow = !glow; });
+document.getElementById('pauseBtn').addEventListener('click', () => { paused = !paused; document.getElementById('pauseBtn').textContent = paused ? '▶' : '⏸'; });
+document.getElementById('resetBtn').addEventListener('click', () => { resetParticles(particles.length); });
+document.getElementById('toggle-hud').addEventListener('click', () => { document.getElementById('hud').classList.toggle('hidden'); });
+
+// ─── Keyboard ───
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); document.getElementById('pauseBtn').click(); }
+  if (e.key === 'g' || e.key === 'G') document.getElementById('glowBtn').click();
+  if (e.key === 'r' || e.key === 'R') document.getElementById('resetBtn').click();
+  // Number keys for presets
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 6) setPreset(n - 1);
+});
+
+// ─── Mouse ───
+canvas.addEventListener('mousedown', e => { mouseDown = true; mouseX = e.clientX; mouseY = e.clientY; });
+canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; if (mouseDown) spawnBurst(e.clientX, e.clientY); });
+canvas.addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('mouseleave', () => { mouseDown = false; mouseX = -1; });
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseDown = true;
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  spawnBurst(t.clientX, t.clientY);
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  if (mouseDown) spawnBurst(t.clientX, t.clientY);
+});
+canvas.addEventListener('touchend', () => { mouseDown = false; });
+
+function spawnBurst(x, y) {
+  if (particles.length >= 3000) return;
+  const count = 5;
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= 3000) break;
+    const p = createParticle(
+      x + (Math.random() - 0.5) * 20,
+      y + (Math.random() - 0.5) * 20,
+      Math.floor(Math.random() * SPECIES)
+    );
+    particles.push(p);
+    speciesCounts[p.species]++;
+  }
+  // Update slider to reflect new count
+  const countSlider = document.getElementById('count');
+  if (particles.length > +countSlider.value) {
+    countSlider.value = particles.length;
+    document.getElementById('countVal').textContent = particles.length;
+    targetCount = particles.length;
+  }
+}
+
+// ─── Init ───
+resetParticles(800);
+lastFpsTime = performance.now();
+
+// ─── Loop ───
+function loop() {
+  if (!paused) update();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// ─── Handle resize ───
+window.addEventListener('resize', () => {
+  resize();
+  // Ensure particles wrap properly after resize
+  for (const p of particles) {
+    if (p.x > W) p.x = p.x % W;
+    if (p.y > H) p.y = p.y % H;
+  }
+});
+
+console.log('🐦 Particle Life — Mcking Codespace');
+console.log(`  ${PRESETS.length} presets, ${SPECIES} species`);
+console.log('  Click/drag to spawn | Space=pause | G=glow | R=reset | 1-6=presets');
+</script>
+</body>
+</html>
