@@ -25,4 +25,17 @@ drawio --export --format svg --output out.svg input.drawio
 
 ---
 
+## 🧬 Particle Life
+
+Emergent artificial life simulation — colored particles attract/repel each other
+via configurable force matrices, creating organic flowing patterns.
+
+```bash
+./run.sh web/particle-life/index.html
+```
+
+**Features:** 4 species, 6 presets, interactive controls, glow toggle, mouse drag.
+
+---
+
 💡 Nota: `viewer.diagrams.net` com `raw.githubusercontent.com` não funciona em repos privados.
