@@ -47,6 +47,7 @@ Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https:/
 | 🔮 **Plasma** | _(terminal-only)_ | Classic demoscene plasma effect — 5 palettes, sine-wave layers, interactive controls |
 | 🧬 **Cellular Automata** | [`/cellular-automata/`](https://lcmonteiro.github.io/mcking-codespace/cellular-automata/) | Simulador interativo de autómatos celulares (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld) |
 | 📊 **Diagrams** | [`/diagrams/`](https://lcmonteiro.github.io/mcking-codespace/diagrams/) | Diagramas e whiteboards (SVG) |
+| λ **λ-tree** | _(terminal-only)_ | Lambda calculus visualiser — β-reduction, ASCII trees, Church numerals |
 | 🏠 **Landing** | [`/`](https://lcmonteiro.github.io/mcking-codespace/) | Página inicial com links para todos os projetos |
 
 O deploy corre automaticamente em cada push para `master` (`.github/workflows/pages.yml`).

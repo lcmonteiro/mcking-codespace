@@ -1,3 +1,22 @@
+## Python Projects
+
+| Script | Description |
+|---|---|
+| [`password_generator.py`](./password_generator.py) | 🔐 Password Generator & Strength Analyzer |
+| [`lambda_tree.py`](./lambda_tree.py) | λ λ-calculus visualiser with β-reduction, ASCII trees, Church numerals |
+| [`nocturne.py`](./nocturne.py) | 🌙 Animated night landscape in terminal |
+| [`plasma.py`](./plasma.py) | 🔮 Classic demoscene plasma effect |
+| [`mandelbrot.py`](./mandelbrot.py) | 🌀 Interactive Mandelbrot set explorer |
+| [`cellular_automata.py`](./cellular_automata.py) | 🧬 Cellular automata playground (6 rulesets) |
+| [`aurora.py`](./aurora.py) | 🌌 Animated aurora borealis effect |
+| [`maze_generator.py`](./maze_generator.py) | 🏗️ Maze generation & solving |
+| [`matrix_rain.py`](./matrix_rain.py) | 💚 Matrix digital rain |
+| [`fractal_ascii.py`](./fractal_ascii.py) | 🔷 ASCII fractal renderer |
+| [`cyberdash.py`](./cyberdash.py) | ⚡ Cyberpunk dashboard |
+| [`lifelike.py`](./lifelike.py) | 🧪 Life-like cellular automata |
+
+---
+
 # 🔐 Password Generator & Strength Analyzer
 
 An interactive password generator and strength analyzer tool for secure password management.
@@ -186,6 +205,94 @@ This project is open source and available under the [MIT License](LICENSE).
 - **Author**: Mcking (AI Assistant)
 - **Date**: July 7, 2026
 - **Inspired by**: zxcvbn password strength estimator
+
+---
+
+---
+
+# λ λ-tree — Lambda Calculus Visualiser
+
+A terminal-based lambda calculus expression explorer and visualiser.
+
+## Quick Start
+
+```bash
+# Evaluate an expression (CBV)
+python python/lambda_tree.py --eval "(λx. x x) (λx. x)"
+
+# Show AST tree
+python python/lambda_tree.py --tree "λf. λx. f (f x)"
+
+# Show Church numeral
+python python/lambda_tree.py --church 5
+
+# Reduce with normal order strategy
+python python/lambda_tree.py --reduce "S K K" --normal
+```
+
+## Interactive REPL
+
+```bash
+python python/lambda_tree.py
+```
+
+```
+λ> (λx. x) y
+  ⟹  y
+
+λ> :reduce S K K --normal
+  Strategy: normal order
+  ⟹  (λx. λy. λz. (x z) (y z) (λx. λy. x)) (λx. λy. x)
+   1. β: ...  ⟹  λz. z
+
+λ> :tree λf. λx. f (f (f x))
+└── λ f
+    └── λ x
+        └── App
+            ├── Var(f)
+            └── App (...)
+
+λ> :church 5
+  Church numeral 5:
+    λf. λx. f (f (f (f (f x))))
+
+λ> :decode λf. λx. f (f (f x))
+  Church numeral → 3
+
+λ> :combinators
+    B      = λx. λy. λz. x (y z)
+    C      = λx. λy. λz. (x z) y
+    I      = λx. x
+    K      = λx. λy. x
+    S      = λx. λy. λz. (x z) (y z)
+    Y      = λf. λx. f (x x) (λx. f (x x))
+    ...
+```
+
+## Features
+
+- **Parser**: Variables, abstractions (λ/\), applications
+- **β-reduction**: Three strategies (CBV, CBN, Normal Order)
+- **α-conversion**: Automatic renaming to avoid capture
+- **ASCII Tree**: Visual AST representation
+- **Church Numerals**: Encode/decode natural numbers
+- **Combinator Library**: S, K, I, B, C, W, Y, TRUE, FALSE
+- **Interactive REPL** with command history (readline)
+
+## REPL Commands
+
+| Command | Description |
+|---|---|
+| `:tree <expr>` | Show AST tree |
+| `:reduce <expr>` | Step through β-reduction |
+| `:reduce <expr> --cbn` | Call-by-name reduction |
+| `:reduce <expr> --normal` | Normal order reduction |
+| `:church <n>` | Show Church numeral n |
+| `:decode <expr>` | Try to decode Church numeral |
+| `:combinators` | List available combinators |
+| `:help` | Show help banner |
+| `:quit` | Exit |
+
 
 ---
 
