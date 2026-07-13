@@ -56,3 +56,4 @@ scripts/   — Build scripts, helpers
 - `python/plasma.py` — classic demoscene plasma effect with 5 palettes (Lava, Ocean, Neon, Forest, Ice), interactive controls, auto-cycle
 - `python/mandelbrot.py` — interactive Mandelbrot set explorer (pan, zoom, 8 palettes, smooth coloring)
 - `python/cellular_automata.py` — cellular automata playground with 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
+- `python/hyperspace.py` — hyperspace starfield with warp drive, 8 palettes, FPS counter, interactive controls
