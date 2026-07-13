@@ -2,6 +2,7 @@
 
 | Script | Description |
 |---|---|
+| [`hyperspace.py`](./hyperspace.py) | 🚀 Hyperspace starfield with warp drive, palette cycling, interactive controls |
 | [`password_generator.py`](./password_generator.py) | 🔐 Password Generator & Strength Analyzer |
 | [`lambda_tree.py`](./lambda_tree.py) | λ λ-calculus visualiser with β-reduction, ASCII trees, Church numerals |
 | [`nocturne.py`](./nocturne.py) | 🌙 Animated night landscape in terminal |
