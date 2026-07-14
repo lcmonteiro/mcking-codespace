@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fluid Simulation</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#08080a;color:#c8c8d0;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;display:flex;height:100vh;user-select:none}
+
+  #canvas{flex:1;display:block;cursor:crosshair;touch-action:none}
+
+  #hud{position:fixed;top:16px;right:16px;background:rgba(8,8,12,.85);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:16px;min-width:200px;z-index:10;transition:transform .3s,opacity .3s}
+  #hud h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#666;margin-bottom:12px}
+  #hud.hidden{transform:translateX(280px);opacity:0;pointer-events:none}
+  #toggle-hud{position:fixed;top:16px;right:16px;z-index:11;background:rgba(8,8,12,.7);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#888;cursor:pointer;padding:6px 10px;font-size:13px;display:none}
+  #hud.hidden~#toggle-hud{display:block}
+
+  .ctrl{margin-bottom:10px}
+  .ctrl label{display:flex;justify-content:space-between;font-size:12px;color:#999;margin-bottom:2px}
+  .ctrl label span{color:#ddd;font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;background:#222;border-radius:2px;outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#6c6cf0;cursor:pointer;border:none}
+
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .btn{flex:1;min-width:50px;padding:5px 8px;font-size:11px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:rgba(255,255,255,.04);color:#aaa;cursor:pointer;transition:all .15s;text-align:center}
+  .btn:hover{background:rgba(108,108,240,.15);border-color:#6c6cf0;color:#fff}
+  .btn.active{background:rgba(108,108,240,.25);border-color:#6c6cf0;color:#fff}
+  .btn-icon{font-size:15px;line-height:1;width:32px;min-width:32px;padding:5px 0}
+  .sep{border:none;border-top:1px solid rgba(255,255,255,.06);margin:8px 0}
+
+  #info{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);font-size:11px;color:#444;z-index:5;pointer-events:none;text-align:center}
+  #info kbd{background:rgba(255,255,255,.06);padding:1px 6px;border-radius:3px;font-family:inherit;font-size:10px}
+  .fps{color:#555;margin-left:12px}
+
+  @media(max-width:600px){#hud{top:8px;right:8px;padding:12px;min-width:170px;font-size:11px}}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <h2>Fluid Sim</h2>
+
+  <div class="ctrl">
+    <label>Viscosity <span id="viscVal">0.25</span></label>
+    <input type="range" id="visc" min="0" max="1" step="0.01" value="0.25">
+  </div>
+  <div class="ctrl">
+    <label>Diffusion <span id="diffVal">0.08</span></label>
+    <input type="range" id="diff" min="0" max="0.5" step="0.01" value="0.08">
+  </div>
+  <div class="ctrl">
+    <label>Brush <span id="brushVal">12</span></label>
+    <input type="range" id="brush" min="2" max="40" step="1" value="12">
+  </div>
+  <div class="ctrl">
+    <label>Strength <span id="strengthVal">2.5</span></label>
+    <input type="range" id="strength" min="0.1" max="6" step="0.1" value="2.5">
+  </div>
+
+  <hr class="sep">
+
+  <div class="row">
+    <button class="btn active" data-mode="0">Rainbow</button>
+    <button class="btn" data-mode="1">Fire</button>
+    <button class="btn" data-mode="2">Smoke</button>
+    <button class="btn" data-mode="3">Ink</button>
+  </div>
+
+  <hr class="sep">
+
+  <div class="row">
+    <button class="btn btn-icon" id="clearBtn" title="Clear">✕</button>
+    <button class="btn btn-icon" id="pauseBtn" title="Pause">⏸</button>
+    <button class="btn" id="explodeBtn">💥 Boom</button>
+  </div>
+</div>
+
+<button id="toggle-hud">☰</button>
+
+<div id="info">
+  Click/drag to paint &bull; Scroll wheel = brush size &bull; <kbd>Space</kbd> pause &bull; <kbd>C</kbd> clear
+  <span class="fps" id="fps">0 FPS</span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Fluid Simulation — Mcking Codespace
+// Jos Stam-style stable fluid solver on GPU via canvas 2D pixel buffer
+// ═══════════════════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── Grid dimensions ───
+// We use a fixed resolution compute grid for performance,
+// then upscale to canvas. Higher RES = more detail but slower.
+const RES = 160;
+const N = RES + 2; // +2 for boundary cells (Stam convention)
+const SIZE = N * N;
+
+// ─── Fluid arrays ───
+// Using Float32Arrays for performance
+let u = new Float32Array(SIZE);  // x-velocity
+let v = new Float32Array(SIZE);  // y-velocity
+let u_prev = new Float32Array(SIZE);
+let v_prev = new Float32Array(SIZE);
+
+let dens = new Float32Array(SIZE);   // dye density (single channel)
+let dens_r = new Float32Array(SIZE); // color channels
+let dens_g = new Float32Array(SIZE);
+let dens_b = new Float32Array(SIZE);
+
+let dens_prev = new Float32Array(SIZE);
+let curl = new Float32Array(SIZE);   // vorticity
+
+// ─── Parameters ───
+let viscosity = 0.25;
+let diffusion = 0.08;
+let brushSize = 12;
+let strength = 2.5;
+let paused = false;
+let mode = 0; // 0=rainbow, 1=fire, 2=smoke, 3=ink
+
+// Mouse state
+let mouseX = -1, mouseY = -1;
+let prevMouseX = -1, prevMouseY = -1;
+let mouseDown = false;
+let paintColor = { r: 1, g: 1, b: 1 };
+
+// FPS
+let frameCount = 0;
+let lastFpsTime = 0;
+
+// ─── Index helper ───
+function IX(i, j) { return i + j * N; }
+
+// ─── Solvers ───
+
+// Linear solve (Gauss-Seidel relaxation)
+function linSolve(b, x, x0, a, c, iter) {
+  const cRecip = 1 / c;
+  for (let k = 0; k < iter; k++) {
+    for (let j = 1; j <= RES; j++) {
+      for (let i = 1; i <= RES; i++) {
+        const idx = IX(i, j);
+        x[idx] = (x0[idx] + a * (
+          x[IX(i-1, j)] + x[IX(i+1, j)] +
+          x[IX(i, j-1)] + x[IX(i, j+1)]
+        )) * cRecip;
+      }
+    }
+    setBnd(b, x);
+  }
+}
+
+// Diffuse quantity
+function diffuse(b, x, x0, diff, dt) {
+  const a = dt * diff * RES * RES;
+  linSolve(b, x, x0, a, 1 + 4 * a, 20);
+}
+
+// Advect quantity
+function advect(b, d, d0, u, v, dt) {
+  const dt0 = dt * RES;
+  for (let j = 1; j <= RES; j++) {
+    for (let i = 1; i <= RES; i++) {
+      const idx = IX(i, j);
+      // Backtrace
+      let px = i - dt0 * u[idx];
+      let py = j - dt0 * v[idx];
+
+      // Clamp to grid
+      if (px < 0.5) px = 0.5;
+      if (px > RES + 0.5) px = RES + 0.5;
+      if (py < 0.5) py = 0.5;
+      if (py > RES + 0.5) py = RES + 0.5;
+
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      const sx = px - ix;
+      const sy = py - iy;
+
+      // Bilinear interpolation
+      const i0 = IX(ix, iy);
+      const i1 = IX(ix + 1, iy);
+      const i2 = IX(ix, iy + 1);
+      const i3 = IX(ix + 1, iy + 1);
+
+      d[idx] = (1 - sx) * (1 - sy) * d0[i0]
+             + sx  * (1 - sy) * d0[i1]
+             + (1 - sx) * sy    * d0[i2]
+             + sx  * sy         * d0[i3];
+    }
+  }
+  setBnd(b, d);
+}
+
+// Project (mass conservation — make fluid divergence-free)
+function project(u, v, p, div) {
+  for (let j = 1; j <= RES; j++) {
+    for (let i = 1; i <= RES; i++) {
+      const idx = IX(i, j);
+      div[idx] = -0.5 * (
+        u[IX(i+1, j)] - u[IX(i-1, j)] +
+        v[IX(i, j+1)] - v[IX(i, j-1)]
+      ) / RES;
+      p[idx] = 0;
+    }
+  }
+  setBnd(0, div);
+  setBnd(0, p);
+
+  linSolve(0, p, div, 1, 4, 20);
+
+  for (let j = 1; j <= RES; j++) {
+    for (let i = 1; i <= RES; i++) {
+      const idx = IX(i, j);
+      u[idx] -= 0.5 * RES * (p[IX(i+1, j)] - p[IX(i-1, j)]);
+      v[idx] -= 0.5 * RES * (p[IX(i, j+1)] - p[IX(i, j-1)]);
+    }
+  }
+  setBnd(1, u);
+  setBnd(2, v);
+}
+
+// ─── Boundary conditions ───
+function setBnd(b, x) {
+  for (let i = 1; i <= RES; i++) {
+    // Top/bottom
+    x[IX(i, 0)]   = b === 2 ? -x[IX(i, 1)]   : x[IX(i, 1)];
+    x[IX(i, RES+1)] = b === 2 ? -x[IX(i, RES)] : x[IX(i, RES)];
+    // Left/right
+    x[IX(0, i)]   = b === 1 ? -x[IX(1, i)]   : x[IX(1, i)];
+    x[IX(RES+1, i)] = b === 1 ? -x[IX(RES, i)] : x[IX(RES, i)];
+  }
+  // Corners (average of neighbors)
+  x[IX(0, 0)]         = 0.5 * (x[IX(1, 0)] + x[IX(0, 1)]);
+  x[IX(RES+1, 0)]     = 0.5 * (x[IX(RES, 0)] + x[IX(RES+1, 1)]);
+  x[IX(0, RES+1)]     = 0.5 * (x[IX(1, RES+1)] + x[IX(0, RES)]);
+  x[IX(RES+1, RES+1)] = 0.5 * (x[IX(RES, RES+1)] + x[IX(RES+1, RES)]);
+}
+
+// ─── Vorticity confinement ───
+// Adds back small-scale vortices that get dissipated
+function vorticityConfinement() {
+  const dt = 0.1;
+  for (let j = 1; j <= RES; j++) {
+    for (let i = 1; i <= RES; i++) {
+      const idx = IX(i, j);
+      // Curl (vorticity) at this cell
+      curl[idx] = (
+        v[IX(i+1, j)] - v[IX(i-1, j)] -
+        u[IX(i, j+1)] + u[IX(i, j-1)]
+      ) * 0.5 * RES;
+    }
+  }
+
+  for (let j = 2; j <= RES - 1; j++) {
+    for (let i = 2; i <= RES - 1; i++) {
+      // Gradient of |curl|
+      const gx = (Math.abs(curl[IX(i+1, j)]) - Math.abs(curl[IX(i-1, j)])) * 0.5;
+      const gy = (Math.abs(curl[IX(i, j+1)]) - Math.abs(curl[IX(i, j-1)])) * 0.5;
+      const len = Math.sqrt(gx * gx + gy * gy) + 1e-6;
+
+      const idx = IX(i, j);
+      const w = curl[idx];
+      // Force magnitude (tunable)
+      const eps = 0.15;
+
+      u[idx] += (gx / len) * w * eps * dt;
+      v[idx] += (gy / len) * w * eps * dt;
+    }
+  }
+}
+
+// ─── Density step ───
+function densStep(dt) {
+  diffuse(0, dens_prev, dens, diffusion, dt);
+  swapDens();
+  advect(0, dens, dens_prev, u, v, dt);
+
+  diffuse(0, dens_prev, dens_r, diffusion, dt);
+  swap(1);
+  advect(0, dens_r, dens_prev, u, v, dt);
+
+  diffuse(0, dens_prev, dens_g, diffusion, dt);
+  swap(2);
+  advect(0, dens_g, dens_prev, u, v, dt);
+
+  diffuse(0, dens_prev, dens_b, diffusion, dt);
+  swap(3);
+  advect(0, dens_b, dens_prev, u, v, dt);
+}
+
+// ─── Velocity step ───
+function velStep(dt) {
+  diffuse(1, u_prev, u, viscosity, dt);
+  swapU();
+  diffuse(2, v_prev, v, viscosity, dt);
+  swapV();
+
+  project(u, v, u_prev, v_prev);
+
+  advect(1, u, u_prev, u_prev, v_prev, dt);
+  advect(2, v, v_prev, u_prev, v_prev, dt);
+
+  project(u, v, u_prev, v_prev);
+
+  vorticityConfinement();
+}
+
+// ─── Swap helpers ───
+function swapU() { const t = u; u = u_prev; u_prev = t; }
+function swapV() { const t = v; v = v_prev; v_prev = t; }
+function swapDens() { const t = dens; dens = dens_prev; dens_prev = t; }
+
+let swapIdx = 0;
+function swap(n) {
+  if (n === 1) { const t = dens_r; dens_r = dens_prev; dens_prev = t; }
+  else if (n === 2) { const t = dens_g; dens_g = dens_prev; dens_prev = t; }
+  else if (n === 3) { const t = dens_b; dens_b = dens_prev; dens_prev = t; }
+}
+
+// ─── Fluid step (single timestep) ───
+function fluidStep() {
+  const dt = 0.1;
+  velStep(dt);
+  densStep(dt);
+}
+
+// ─── Add dye/velocity at a grid position ───
+function addInk(cx, cy, r, g, b, amount, vx, vy) {
+  const gx = Math.floor(cx * RES);
+  const gy = Math.floor(cy * RES);
+
+  const brush = brushSize;
+  const radius = brush / W * RES;
+  const r2 = radius * radius;
+
+  for (let j = Math.max(1, gy - Math.ceil(radius)); j <= Math.min(RES, gy + Math.ceil(radius)); j++) {
+    for (let i = Math.max(1, gx - Math.ceil(radius)); i <= Math.min(RES, gx + Math.ceil(radius)); i++) {
+      const dx = i - gx;
+      const dy = j - gy;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 > r2) continue;
+
+      // Smooth falloff
+      const falloff = Math.exp(-dist2 / r2 * 3);
+      const idx = IX(i, j);
+
+      dens_r[idx] += r * amount * falloff;
+      dens_g[idx] += g * amount * falloff;
+      dens_b[idx] += b * amount * falloff;
+      dens[idx] += amount * falloff;
+
+      u[idx] += vx * falloff * 0.3 * strength;
+      v[idx] += vy * falloff * 0.3 * strength;
+    }
+  }
+}
+
+// ─── Get color for current mode ───
+function getPaintColor() {
+  switch (mode) {
+    case 0: // Rainbow — cycle based on position
+      return {
+        r: 0.5 + 0.5 * Math.sin(Date.now() * 0.001),
+        g: 0.5 + 0.5 * Math.sin(Date.now() * 0.001 + 2.09),
+        b: 0.5 + 0.5 * Math.sin(Date.now() * 0.001 + 4.19),
+      };
+    case 1: // Fire — oranges and reds
+      return {
+        r: 1.0,
+        g: 0.3 + Math.random() * 0.5,
+        b: Math.random() * 0.2,
+      };
+    case 2: // Smoke — grays/whites
+      return {
+        r: 0.6 + Math.random() * 0.4,
+        g: 0.6 + Math.random() * 0.4,
+        b: 0.6 + Math.random() * 0.4,
+      };
+    case 3: // Ink — deep blues with hint
+      return {
+        r: 0.1,
+        g: 0.2 + Math.random() * 0.3,
+        b: 0.7 + Math.random() * 0.3,
+      };
+  }
+}
+
+// ─── Explosion! ───
+function boom() {
+  const cx = 0.3 + Math.random() * 0.4;
+  const cy = 0.3 + Math.random() * 0.4;
+
+  for (let i = 0; i < 30; i++) {
+    const angle = Math.random() * 2 * Math.PI;
+    const speed = 0.5 + Math.random() * 1.5;
+    const dist = 0.01 + Math.random() * 0.04;
+    const r = Math.random() > 0.5 ? 1.0 : 0.8;
+    const g = Math.random() > 0.5 ? 0.6 : 0.2;
+    const b = Math.random() > 0.5 ? 0.0 : 0.8;
+    addInk(
+      cx + Math.cos(angle) * dist,
+      cy + Math.sin(angle) * dist,
+      r, g, b, 0.5,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed
+    );
+  }
+}
+
+// ─── Rendering ───
+function render() {
+  const imageData = ctx.createImageData(W, H);
+  const data = imageData.data;
+
+  // Scale: grid cell → screen pixels
+  const sx = W / RES;
+  const sy = H / RES;
+
+  for (let j = 0; j < H; j++) {
+    const gridJ = Math.floor(j / sy) + 1;
+    const jOff = j * W * 4;
+    for (let i = 0; i < W; i++) {
+      const gridI = Math.floor(i / sx) + 1;
+      const idx = IX(gridI, gridJ);
+
+      // Convert density to pixel (with gamma-ish correction)
+      const r = Math.min(1, dens_r[idx] * 1.5);
+      const g = Math.min(1, dens_g[idx] * 1.5);
+      const b = Math.min(1, dens_b[idx] * 1.5);
+
+      const pixelOff = jOff + i * 4;
+      data[pixelOff]     = r * 255;
+      data[pixelOff + 1] = g * 255;
+      data[pixelOff + 2] = b * 255;
+      data[pixelOff + 3] = Math.min(255, dens[idx] * 300 + 10);
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById('fps').textContent = `${frameCount} FPS`;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// ─── Main loop ───
+function loop() {
+  if (!paused) {
+    // Paint while dragging
+    if (mouseDown && mouseX >= 0 && prevMouseX >= 0) {
+      const c = getPaintColor();
+      const nx = mouseX / W;
+      const ny = mouseY / H;
+      const px = prevMouseX / W;
+      const py = prevMouseY / H;
+
+      // Interpolate between previous and current for smooth ink trails
+      const dist = Math.sqrt((nx-px)**2 + (ny-py)**2);
+      const steps = Math.max(1, Math.floor(dist / (brushSize / W * 0.5)));
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps;
+        addInk(
+          px + (nx - px) * t,
+          py + (ny - py) * t,
+          c.r, c.g, c.b, 0.3 + strength * 0.15,
+          (nx - px) * 50,
+          (ny - py) * 50
+        );
+      }
+    }
+
+    // Fire mode: add rising heat
+    if (mode === 1) {
+      for (let i = 0; i < 3; i++) {
+        const x = Math.random();
+        addInk(x, 1.0, 1.0, 0.3, 0.0, 0.4, 0, -0.5);
+      }
+    }
+
+    // Smoke mode: add rising smoke puffs
+    if (mode === 2) {
+      for (let i = 0; i < 2; i++) {
+        const x = Math.random();
+        const gray = 0.3 + Math.random() * 0.3;
+        addInk(x, 1.0, gray, gray, gray, 0.15, (Math.random() - 0.5) * 0.3, -0.3);
+      }
+    }
+
+    fluidStep();
+  }
+
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ─── Mouse ───
+canvas.addEventListener('mousedown', e => {
+  mouseDown = true;
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+});
+canvas.addEventListener('mousemove', e => {
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+canvas.addEventListener('mouseup', () => {
+  mouseDown = false;
+  prevMouseX = -1;
+  prevMouseY = -1;
+});
+canvas.addEventListener('mouseleave', () => {
+  mouseDown = false;
+  mouseX = -1;
+  mouseY = -1;
+  prevMouseX = -1;
+  prevMouseY = -1;
+});
+
+// Scroll wheel = brush size
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  brushSize = Math.max(2, Math.min(60, brushSize + (e.deltaY > 0 ? -2 : 2)));
+  document.getElementById('brushVal').textContent = brushSize;
+  document.getElementById('brush').value = brushSize;
+}, { passive: false });
+
+// Touch
+let touchPrevX = -1, touchPrevY = -1;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseDown = true;
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+  touchPrevX = mouseX;
+  touchPrevY = mouseY;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  prevMouseX = mouseX;
+  prevMouseY = mouseY;
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+});
+canvas.addEventListener('touchend', () => {
+  mouseDown = false;
+  mouseX = -1;
+  mouseY = -1;
+  prevMouseX = -1;
+  prevMouseY = -1;
+});
+
+// ─── UI ───
+// Mode buttons
+document.querySelectorAll('[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    mode = +btn.dataset.mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === btn.dataset.mode));
+  });
+});
+
+// Sliders
+function slider(id, valId, cb) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    const v = +el.value;
+    val.textContent = v.toFixed(id === 'brush' ? 0 : 2);
+    cb(v);
+  });
+}
+slider('visc', 'viscVal', v => viscosity = v);
+slider('diff', 'diffVal', v => diffusion = v);
+slider('brush', 'brushVal', v => brushSize = v);
+slider('strength', 'strengthVal', v => strength = v);
+
+// Buttons
+document.getElementById('clearBtn').addEventListener('click', () => {
+  dens = new Float32Array(SIZE);
+  dens_r = new Float32Array(SIZE);
+  dens_g = new Float32Array(SIZE);
+  dens_b = new Float32Array(SIZE);
+  dens_prev = new Float32Array(SIZE);
+});
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? '▶' : '⏸';
+});
+document.getElementById('explodeBtn').addEventListener('click', boom);
+document.getElementById('toggle-hud').addEventListener('click', () => {
+  document.getElementById('hud').classList.toggle('hidden');
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); document.getElementById('pauseBtn').click(); }
+  if (e.key === 'c' || e.key === 'C') document.getElementById('clearBtn').click();
+  if (e.key >= '1' && e.key <= '4') {
+    const idx = parseInt(e.key) - 1;
+    mode = idx;
+    document.querySelectorAll('[data-mode]').forEach((b, i) => b.classList.toggle('active', i === idx));
+  }
+});
+
+// ─── Init ───
+// Add a splash of initial dye
+function initFluid() {
+  // A little colorful swirl to start
+  for (let i = 0; i < 20; i++) {
+    const cx = 0.2 + Math.random() * 0.6;
+    const cy = 0.2 + Math.random() * 0.6;
+    addInk(cx, cy, Math.random(), Math.random(), Math.random(), 0.2, (Math.random()-0.5)*2, (Math.random()-0.5)*2);
+  }
+}
+
+initFluid();
+lastFpsTime = performance.now();
+loop();
+
+console.log('🌊 Fluid Simulation — Mcking Codespace');
+console.log(`  Grid: ${RES}×${RES} (${RES*RES} cells), upscaled to ${W}×${H}`);
+console.log('  Click/drag to paint | Scroll=brush | Space=pause | C=clear | 1-4=modes');
+</script>
+</body>
+</html>
