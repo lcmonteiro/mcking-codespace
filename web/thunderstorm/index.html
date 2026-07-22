@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⛈️ Thunderstorm Simulator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #000;
+    color: #ccc;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    display: flex;
+    height: 100vh;
+    user-select: none;
+  }
+
+  #canvas { flex: 1; display: block; cursor: crosshair; touch-action: none; }
+
+  /* ─── HUD ─── */
+  #hud {
+    position: fixed; top: 16px; right: 16px;
+    background: rgba(8,8,12,.85); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.08); border-radius: 12px;
+    padding: 16px; min-width: 210px; z-index: 10;
+    transition: transform .3s, opacity .3s;
+  }
+  #hud h2 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.5px; color: #666; margin-bottom: 12px;
+  }
+  #hud.hidden { transform: translateX(280px); opacity: 0; pointer-events: none; }
+  #toggle-hud {
+    position: fixed; top: 16px; right: 16px; z-index: 11;
+    background: rgba(8,8,12,.7); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px; color: #888; cursor: pointer;
+    padding: 6px 10px; font-size: 13px; display: none;
+  }
+  #hud.hidden ~ #toggle-hud { display: block; }
+
+  .ctrl { margin-bottom: 10px; }
+  .ctrl label {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: #999; margin-bottom: 2px;
+  }
+  .ctrl label span { color: #ddd; font-variant-numeric: tabular-nums; }
+  input[type=range] {
+    width: 100%; height: 4px; -webkit-appearance: none; appearance: none;
+    background: #222; border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+    background: #6c6cf0; cursor: pointer; border: none;
+  }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .btn {
+    flex: 1; min-width: 50px; padding: 5px 8px; font-size: 11px;
+    border: 1px solid rgba(255,255,255,.1); border-radius: 6px;
+    background: rgba(255,255,255,.04); color: #aaa; cursor: pointer;
+    transition: all .15s; text-align: center;
+  }
+  .btn:hover { background: rgba(108,108,240,.15); border-color: #6c6cf0; color: #fff; }
+  .btn.active { background: rgba(108,108,240,.25); border-color: #6c6cf0; color: #fff; }
+  .sep { border: none; border-top: 1px solid rgba(255,255,255,.06); margin: 8px 0; }
+
+  #info {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; color: #444; z-index: 5; pointer-events: none;
+    text-align: center;
+  }
+  #info kbd {
+    background: rgba(255,255,255,.06); padding: 1px 6px; border-radius: 3px;
+    font-family: inherit; font-size: 10px;
+  }
+  .fps { color: #555; margin-left: 12px; }
+
+  /* ─── Splash counter ─── */
+  #stats {
+    position: fixed; bottom: 16px; right: 16px;
+    font-size: 11px; color: #333; z-index: 5; pointer-events: none;
+  }
+
+  @media (max-width: 600px) {
+    #hud { top: 8px; right: 8px; padding: 12px; min-width: 170px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <h2>⛈️ Thunderstorm</h2>
+
+  <div class="ctrl">
+    <label>Rain <span id="v-rain">70%</span></label>
+    <input type="range" id="rain" min="0" max="100" value="70">
+  </div>
+  <div class="ctrl">
+    <label>Wind <span id="v-wind">30%</span></label>
+    <input type="range" id="wind" min="0" max="100" value="30">
+  </div>
+  <div class="ctrl">
+    <label>Thunder <span id="v-thunder">40%</span></label>
+    <input type="range" id="thunder" min="0" max="100" value="40">
+  </div>
+  <div class="ctrl">
+    <label>Fog <span id="v-fog">25%</span></label>
+    <input type="range" id="fog" min="0" max="100" value="25">
+  </div>
+  <div class="ctrl">
+    <label>Speed <span id="v-speed">1.0×</span></label>
+    <input type="range" id="speed" min="20" max="200" value="100">
+  </div>
+  <div class="ctrl">
+    <label>Drops size <span id="v-size">1.0×</span></label>
+    <input type="range" id="dropsize" min="50" max="200" value="100">
+  </div>
+
+  <hr class="sep">
+
+  <div class="row">
+    <button class="btn" id="btn-thunder" title="Trigger lightning">⚡</button>
+    <button class="btn" id="btn-sound" title="Toggle sound">🔊</button>
+    <button class="btn" id="btn-night" title="Toggle night/day">🌙</button>
+  </div>
+
+  <div class="row">
+    <button class="btn" id="btn-preset-gentle">Gentle</button>
+    <button class="btn active" id="btn-preset-storm">Storm</button>
+    <button class="btn" id="btn-preset-hurricane">Wild</button>
+  </div>
+</div>
+<button id="toggle-hud">⚙️</button>
+
+<div id="info">
+  <kbd>H</kbd> HUD &nbsp; <kbd>T</kbd> Thunder &nbsp; <kbd>S</kbd> Sound &nbsp; <kbd>Click</kbd> Splash
+</div>
+<div id="stats"><span id="drop-count">0</span> drops</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  ⛈️  THUNDERSTORM SIMULATOR
+//  Canvas-based rain, lightning, thunder, fog
+// ═══════════════════════════════════════════════════
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// ── State ──
+let W, H;
+const state = {
+  rain: 0.7,
+  wind: 0.3,
+  thunder: 0.4,
+  fog: 0.25,
+  speed: 1.0,
+  dropSize: 1.0,
+  soundEnabled: true,
+  nightMode: true,
+  flashAlpha: 0,
+  windTarget: 0,
+  windSmooth: 0,
+  mouseSplash: null,
+  time: 0,
+};
+
+// ── Resize ──
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Rain drops ──
+const MAX_DROPS = 2000;
+let drops = [];
+
+class Drop {
+  constructor() { this.reset(true); }
+  reset(initial) {
+    this.x = Math.random() * (W + 400) - 200;
+    this.y = initial ? Math.random() * H : -20 - Math.random() * 200;
+    this.len = 10 + Math.random() * 25;
+    this.speed = 8 + Math.random() * 12;
+    this.thickness = 0.5 + Math.random() * 1.5;
+    this.opacity = 0.15 + Math.random() * 0.4;
+    this.layer = Math.random(); // 0=back, 1=front
+  }
+}
+
+function initDrops() {
+  drops = [];
+  for (let i = 0; i < MAX_DROPS; i++) drops.push(new Drop());
+}
+initDrops();
+
+// ── Splashes ──
+let splashes = [];
+class Splash {
+  constructor(x, y, intensity) {
+    this.x = x; this.y = y;
+    this.life = 1.0;
+    this.intensity = intensity || 1.0;
+    this.radius = 2 + Math.random() * 3;
+    this.maxRadius = 12 + Math.random() * 10 * this.intensity;
+    this.particles = [];
+    const count = 3 + Math.floor(Math.random() * 4 * this.intensity);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 3 * this.intensity;
+      this.particles.push({
+        vx: Math.cos(angle) * spd,
+        vy: -Math.abs(Math.sin(angle) * spd) - 1,
+        life: 1.0,
+      });
+    }
+  }
+  update(dt) {
+    this.life -= dt * 2.5;
+    this.radius += dt * 40;
+    for (const p of this.particles) {
+      p.x = (p.x || 0) + p.vx * dt * 60;
+      p.y = (p.y || 0) + p.vy * dt * 60;
+      p.vy += 0.15; // gravity
+      p.life -= dt * 3;
+    }
+  }
+}
+
+// ── Fog layers ──
+let fogLayers = [];
+function initFog() {
+  fogLayers = [];
+  for (let i = 0; i < 5; i++) {
+    fogLayers.push({
+      x: Math.random() * W,
+      y: H * 0.5 + Math.random() * H * 0.5,
+      w: 200 + Math.random() * 400,
+      h: 40 + Math.random() * 80,
+      speed: 0.2 + Math.random() * 0.5,
+      opacity: 0.03 + Math.random() * 0.06,
+    });
+  }
+}
+initFog();
+
+// ── Audio (Web Audio API) ──
+let audioCtx = null;
+let thunderGain = null;
+let rainGain = null;
+let windGain = null;
+let masterGain = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.3;
+  masterGain.connect(audioCtx.destination);
+
+  // Rain noise (white noise filtered)
+  const rainBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+  const rainData = rainBuf.getChannelData(0);
+  for (let i = 0; i < rainData.length; i++) rainData[i] = Math.random() * 2 - 1;
+  const rainSrc = audioCtx.createBufferSource();
+  rainSrc.buffer = rainBuf;
+  rainSrc.loop = true;
+  const rainFilter = audioCtx.createBiquadFilter();
+  rainFilter.type = 'bandpass';
+  rainFilter.frequency.value = 3000;
+  rainFilter.Q.value = 0.5;
+  rainGain = audioCtx.createGain();
+  rainGain.gain.value = 0.15;
+  rainSrc.connect(rainFilter);
+  rainFilter.connect(rainGain);
+  rainGain.connect(masterGain);
+  rainSrc.start();
+
+  // Wind noise
+  const windBuf = audioCtx.createBuffer(1, audioCtx.sampleRate * 2, audioCtx.sampleRate);
+  const windData = windBuf.getChannelData(0);
+  for (let i = 0; i < windData.length; i++) windData[i] = Math.random() * 2 - 1;
+  const windSrc = audioCtx.createBufferSource();
+  windSrc.buffer = windBuf;
+  windSrc.loop = true;
+  const windFilter = audioCtx.createBiquadFilter();
+  windFilter.type = 'lowpass';
+  windFilter.frequency.value = 400;
+  windGain = audioCtx.createGain();
+  windGain.gain.value = 0.05;
+  windSrc.connect(windFilter);
+  windFilter.connect(windGain);
+  windGain.connect(masterGain);
+  windSrc.start();
+
+  thunderGain = audioCtx.createGain();
+  thunderGain.gain.value = 0;
+  thunderGain.connect(masterGain);
+}
+
+function playThunder(distance) {
+  if (!audioCtx || !state.soundEnabled) return;
+  const now = audioCtx.currentTime;
+  const dur = 1.5 + Math.random() * 2.5;
+  const vol = Math.max(0.05, 0.8 - distance * 0.0008);
+
+  // Low rumble
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 30 + Math.random() * 20;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(vol, now + 0.05);
+  g.gain.exponentialRampToValueAtTime(vol * 0.3, now + 0.3);
+  g.gain.linearRampToValueAtTime(vol * 0.15, now + dur * 0.5);
+  g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+  osc.connect(g);
+  g.connect(thunderGain);
+  thunderGain.gain.value = 1;
+  osc.start(now);
+  osc.stop(now + dur);
+
+  // Crack noise
+  const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.5, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (audioCtx.sampleRate * 0.08));
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const ng = audioCtx.createGain();
+  ng.gain.value = vol * 0.4;
+  const nf = audioCtx.createBiquadFilter();
+  nf.type = 'lowpass';
+  nf.frequency.value = 600 + Math.random() * 400;
+  src.connect(nf);
+  nf.connect(ng);
+  ng.connect(thunderGain);
+  src.start(now + Math.random() * 0.1);
+}
+
+// ── Lightning ──
+let lightningTimer = 0;
+let lightningBolts = [];
+
+class LightningBolt {
+  constructor(x, y, branches) {
+    this.segments = [];
+    this.alpha = 1;
+    this.decay = 1.5 + Math.random() * 1.5;
+    this.buildBolt(x, y, branches || 0);
+  }
+  buildBolt(x, y, branches) {
+    let cx = x, cy = 0;
+    const groundY = y;
+    while (cy < groundY) {
+      const segLen = 15 + Math.random() * 30;
+      const angle = Math.PI / 2 + (Math.random() - 0.5) * 0.8;
+      const nx = cx + Math.cos(angle) * segLen;
+      const ny = cy + Math.sin(angle) * segLen;
+      this.segments.push({ x1: cx, y1: cy, x2: nx, y2: Math.min(ny, groundY) });
+      cx = nx;
+      cy = ny;
+      // Branch
+      if (branches > 0 && Math.random() < 0.3) {
+        const bAngle = angle + (Math.random() > 0.5 ? 1 : -1) * (0.4 + Math.random() * 0.6);
+        const bLen = 20 + Math.random() * 40;
+        const bx = cx + Math.cos(bAngle) * bLen;
+        const by = Math.min(cy + Math.sin(bAngle) * bLen, groundY);
+        this.segments.push({ x1: cx, y1: cy, x2: bx, y2: by, branch: true });
+      }
+    }
+  }
+  update(dt) { this.alpha -= dt * this.decay; }
+  draw(ctx) {
+    if (this.alpha <= 0) return;
+    const a = this.alpha;
+    // Glow
+    ctx.shadowColor = `rgba(180,180,255,${a * 0.8})`;
+    ctx.shadowBlur = 30;
+    ctx.strokeStyle = `rgba(220,220,255,${a})`;
+    ctx.lineWidth = this.segments[0]?.branch ? 1 : 2;
+    ctx.beginPath();
+    let started = false;
+    for (const s of this.segments) {
+      if (s.branch) {
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.lineWidth = 1;
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.lineWidth = 2;
+        started = false;
+      } else {
+        if (!started) { ctx.moveTo(s.x1, s.y1); started = true; }
+        ctx.lineTo(s.x2, s.y2);
+      }
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Core (brighter, thinner)
+    ctx.strokeStyle = `rgba(255,255,255,${a * 0.9})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    started = false;
+    for (const s of this.segments) {
+      if (s.branch) continue;
+      if (!started) { ctx.moveTo(s.x1, s.y1); started = true; }
+      ctx.lineTo(s.x2, s.y2);
+    }
+    ctx.stroke();
+  }
+}
+
+function triggerLightning() {
+  const x = W * 0.1 + Math.random() * W * 0.8;
+  const groundY = H * (0.75 + Math.random() * 0.2);
+  lightningBolts.push(new LightningBolt(x, groundY, 2));
+  state.flashAlpha = 0.6 + Math.random() * 0.3;
+  playThunder(Math.abs(x - W / 2));
+}
+
+// ── Drawing ──
+function drawSky() {
+  if (state.nightMode) {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#050510');
+    grad.addColorStop(0.4, '#0a0a20');
+    grad.addColorStop(0.7, '#101025');
+    grad.addColorStop(1, '#151530');
+    ctx.fillStyle = grad;
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#3a3a50');
+    grad.addColorStop(0.5, '#4a4a60');
+    grad.addColorStop(1, '#2a2a40');
+    ctx.fillStyle = grad;
+  }
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawGround() {
+  const grad = ctx.createLinearGradient(0, H * 0.85, 0, H);
+  grad.addColorStop(0, 'rgba(15,15,25,0)');
+  grad.addColorStop(0.5, 'rgba(10,10,20,0.4)');
+  grad.addColorStop(1, 'rgba(5,5,15,0.7)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, H * 0.85, W, H * 0.15);
+}
+
+function drawRain() {
+  const targetDrops = Math.floor(state.rain * MAX_DROPS);
+  // Adjust drop count
+  while (drops.length < targetDrops) drops.push(new Drop());
+  while (drops.length > targetDrops + 100) drops.pop();
+
+  const windOff = state.windSmooth * 3;
+  const sizeMul = state.dropSize;
+
+  for (const d of drops) {
+    const len = d.len * sizeMul;
+    const alpha = d.opacity * (0.5 + d.layer * 0.5);
+    const depthFade = state.nightMode ? 1 : 0.7;
+
+    // Back drops (more transparent, smaller)
+    if (d.layer < 0.5) {
+      ctx.strokeStyle = `rgba(140,160,200,${alpha * 0.4})`;
+      ctx.lineWidth = d.thickness * 0.6;
+    } else {
+      ctx.strokeStyle = `rgba(180,200,230,${alpha * depthFade})`;
+      ctx.lineWidth = d.thickness;
+    }
+
+    const windX = windOff * d.layer;
+    ctx.beginPath();
+    ctx.moveTo(d.x, d.y);
+    ctx.lineTo(d.x + windX * 0.3, d.y + len);
+    ctx.stroke();
+  }
+}
+
+function updateDrops(dt) {
+  const windOff = state.windSmooth * 3;
+  for (const d of drops) {
+    d.y += d.speed * state.speed * dt * 60;
+    d.x += windOff * d.layer * dt * 30;
+    if (d.y > H + 10 || d.x > W + 200 || d.x < -200) {
+      d.reset(false);
+      // Spawn splash at bottom
+      if (d.y > H - 5 && Math.random() < 0.3 * state.rain) {
+        splashes.push(new Splash(d.x, H - 2 + Math.random() * 5, 0.3));
+      }
+    }
+  }
+}
+
+function drawSplashes(dt) {
+  for (let i = splashes.length - 1; i >= 0; i--) {
+    const s = splashes[i];
+    s.update(dt);
+    if (s.life <= 0) { splashes.splice(i, 1); continue; }
+    const a = s.life * 0.6;
+    // Ring
+    ctx.strokeStyle = `rgba(150,180,220,${a})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(s.x, s.y, s.radius, s.radius * 0.3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Droplets
+    for (const p of s.particles) {
+      if (p.life <= 0) continue;
+      ctx.fillStyle = `rgba(180,200,230,${p.life * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(s.x + p.x, s.y + p.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawFog(dt) {
+  if (state.fog < 0.01) return;
+  for (const f of fogLayers) {
+    f.x += f.speed * state.windSmooth * dt * 60;
+    if (f.x > W + 200) f.x = -f.w;
+    if (f.x < -f.w - 200) f.x = W + 200;
+
+    const a = f.opacity * state.fog * 3;
+    const grad = ctx.createRadialGradient(
+      f.x + f.w / 2, f.y, 0,
+      f.x + f.w / 2, f.y, f.w / 2
+    );
+    grad.addColorStop(0, `rgba(120,130,160,${a})`);
+    grad.addColorStop(1, 'rgba(120,130,160,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(f.x, f.y - f.h, f.w, f.h * 2);
+  }
+}
+
+function drawLightning(dt) {
+  // Flash overlay
+  if (state.flashAlpha > 0) {
+    ctx.fillStyle = `rgba(200,210,255,${state.flashAlpha * 0.15})`;
+    ctx.fillRect(0, 0, W, H);
+    state.flashAlpha -= dt * 3;
+    if (state.flashAlpha < 0) state.flashAlpha = 0;
+  }
+  // Bolts
+  for (let i = lightningBolts.length - 1; i >= 0; i--) {
+    lightningBolts[i].update(dt);
+    if (lightningBolts[i].alpha <= 0) { lightningBolts.splice(i, 1); continue; }
+    lightningBolts[i].draw(ctx);
+  }
+}
+
+// ── Main Loop ──
+let lastTime = 0;
+let frameCount = 0;
+let fpsTime = 0;
+let fps = 0;
+
+function loop(timestamp) {
+  const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  state.time += dt;
+
+  // FPS
+  frameCount++;
+  fpsTime += dt;
+  if (fpsTime >= 1) { fps = Math.round(frameCount / fpsTime); frameCount = 0; fpsTime = 0; }
+
+  // Wind smoothing
+  state.windSmooth += (state.wind - state.windSmooth) * 0.05;
+
+  // Thunder timer
+  if (state.thunder > 0.01) {
+    lightningTimer -= dt;
+    if (lightningTimer <= 0) {
+      triggerLightning();
+      lightningTimer = 3 + Math.random() * 8 / state.thunder;
+    }
+  }
+
+  // Mouse splash
+  if (state.mouseSplash) {
+    splashes.push(new Splash(state.mouseSplash.x, state.mouseSplash.y, 1.5));
+    state.mouseSplash = null;
+  }
+
+  // Draw
+  drawSky();
+  drawGround();
+  drawRain();
+  updateDrops(dt);
+  drawSplashes(dt);
+  drawFog(dt);
+  drawLightning(dt);
+
+  // Stats
+  document.getElementById('drop-count').textContent = drops.length;
+  document.getElementById('stats').innerHTML =
+    `${drops.length} drops <span class="fps">${fps} fps</span>`;
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ── Controls ──
+const sl = (id, key, display, scale) => {
+  const el = document.getElementById(id);
+  const vEl = document.getElementById('v-' + key);
+  el.addEventListener('input', () => {
+    state[key] = el.value / 100 * (scale || 1);
+    vEl.textContent = display(el.value);
+  });
+};
+
+sl('rain', 'rain', v => v + '%');
+sl('wind', 'wind', v => v + '%');
+sl('thunder', 'thunder', v => v + '%');
+sl('fog', 'fog', v => v + '%');
+sl('speed', 'speed', v => (v / 100).toFixed(1) + '×', 100);
+sl('dropsize', 'dropSize', v => (v / 100).toFixed(1) + '×', 100);
+
+// Buttons
+document.getElementById('btn-thunder').addEventListener('click', () => {
+  initAudio();
+  triggerLightning();
+});
+
+document.getElementById('btn-sound').addEventListener('click', () => {
+  initAudio();
+  state.soundEnabled = !state.soundEnabled;
+  document.getElementById('btn-sound').textContent = state.soundEnabled ? '🔊' : '🔇';
+  if (masterGain) masterGain.gain.value = state.soundEnabled ? 0.3 : 0;
+});
+
+document.getElementById('btn-night').addEventListener('click', () => {
+  state.nightMode = !state.nightMode;
+  document.getElementById('btn-night').textContent = state.nightMode ? '🌙' : '☀️';
+});
+
+// Presets
+const presets = {
+  gentle: { rain: 25, wind: 10, thunder: 10, fog: 40, speed: 70, dropsize: 80 },
+  storm:  { rain: 70, wind: 30, thunder: 40, fog: 25, speed: 100, dropsize: 100 },
+  hurricane: { rain: 95, wind: 80, thunder: 70, fog: 15, speed: 150, dropsize: 130 },
+};
+
+function applyPreset(name) {
+  const p = presets[name];
+  if (!p) return;
+  for (const [k, v] of Object.entries(p)) {
+    const el = document.getElementById(k === 'dropsize' ? 'dropsize' : k);
+    if (el) { el.value = v; el.dispatchEvent(new Event('input')); }
+  }
+  // Update button active state
+  document.querySelectorAll('.row .btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-preset-' + name)?.classList.add('active');
+}
+
+document.getElementById('btn-preset-gentle').addEventListener('click', () => applyPreset('gentle'));
+document.getElementById('btn-preset-storm').addEventListener('click', () => applyPreset('storm'));
+document.getElementById('btn-preset-hurricane').addEventListener('click', () => applyPreset('hurricane'));
+
+// HUD toggle
+document.getElementById('toggle-hud').addEventListener('click', () => {
+  document.getElementById('hud').classList.remove('hidden');
+});
+document.querySelector('#hud h2').addEventListener('click', () => {
+  document.getElementById('hud').classList.add('hidden');
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'h') document.getElementById('hud').classList.toggle('hidden');
+  if (k === 't') { initAudio(); triggerLightning(); }
+  if (k === 's') document.getElementById('btn-sound').click();
+});
+
+// Click splash
+canvas.addEventListener('click', e => {
+  state.mouseSplash = { x: e.clientX, y: e.clientY };
+});
+
+// Touch splash
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  state.mouseSplash = { x: t.clientX, y: t.clientY };
+});
+</script>
+</body>
+</html>

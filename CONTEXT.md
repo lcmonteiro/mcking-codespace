@@ -57,3 +57,6 @@ scripts/   — Build scripts, helpers
 - `python/mandelbrot.py` — interactive Mandelbrot set explorer (pan, zoom, 8 palettes, smooth coloring)
 - `python/cellular_automata.py` — cellular automata playground with 6 rulesets (Conway, HighLife, Seeds, Brian's Brain, Day & Night, Wireworld)
 - `python/hyperspace.py` — hyperspace starfield with warp drive, 8 palettes, FPS counter, interactive controls
+- `web/thunderstorm/` — thunderstorm simulator (rain, lightning, thunder via Web Audio, fog, wind)
+- `web/fluid-sim/` — WebGL fluid simulation
+- `web/particle-life/` — emergent artificial life simulation

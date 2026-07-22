@@ -38,4 +38,16 @@ via configurable force matrices, creating organic flowing patterns.
 
 ---
 
+## ⛈️ Thunderstorm Simulator
+
+Full-screen weather simulation with layered rain, lightning bolts, thunder sounds (Web Audio API), wind, fog, and splash effects. 3 presets, night/day mode, interactive splashes.
+
+```bash
+./run.sh web/thunderstorm/index.html
+```
+
+**Features:** 2000 rain drops, procedural branching lightning, distance-based thunder audio, fog drift, click-to-splash, keyboard controls.
+
+---
+
 💡 Nota: `viewer.diagrams.net` com `raw.githubusercontent.com` não funciona em repos privados.
