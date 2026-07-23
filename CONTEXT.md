@@ -60,3 +60,4 @@ scripts/   — Build scripts, helpers
 - `web/thunderstorm/` — thunderstorm simulator (rain, lightning, thunder via Web Audio, fog, wind)
 - `web/fluid-sim/` — WebGL fluid simulation
 - `web/particle-life/` — emergent artificial life simulation
+- `python/snake.py` — terminal Snake game (curses, arrow/WASD, pause, score, speed scaling)

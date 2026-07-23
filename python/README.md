@@ -15,6 +15,7 @@
 | [`fractal_ascii.py`](./fractal_ascii.py) | 🔷 ASCII fractal renderer |
 | [`cyberdash.py`](./cyberdash.py) | ⚡ Cyberpunk dashboard |
 | [`lifelike.py`](./lifelike.py) | 🧪 Life-like cellular automata |
+| [`snake.py`](./snake.py) | 🐍 Terminal Snake game — arrow/WASD, pause, score, speed scaling |
 
 ---
 
