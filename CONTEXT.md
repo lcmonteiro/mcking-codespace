@@ -49,6 +49,7 @@ scripts/   — Build scripts, helpers
 - **Color palettes**: function `(t: float) -> Tuple[int,int,int]` with t ∈ [0,1]; modular and swappable
 - **Density ASCII chars**: `. :-=+*#%@` — index based on smooth value for texture
 - **Star twinkle**: `max(0, sin(t * speed + phase) ** 4)` for sudden peaks
+- **3D Lorenz rendering**: Project via focal length `fov = focal * scale`, Z-buffer for occlusion, depth-indexed ASCII chars `.:-=+*#%@█`
 
 ## Projects in Repo
 
@@ -61,3 +62,4 @@ scripts/   — Build scripts, helpers
 - `web/fluid-sim/` — WebGL fluid simulation
 - `web/particle-life/` — emergent artificial life simulation
 - `python/snake.py` — terminal Snake game (curses, arrow/WASD, pause, score, speed scaling)
+- `python/lorenz.py` — Lorenz Attractor 3D chaotic system (RK4 integration, rotating ASCII, ANSI colour, interactive controls)
