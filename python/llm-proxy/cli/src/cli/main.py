@@ -3,28 +3,47 @@ llm-proxy — LLM Proxy administration CLI.
 
 Usage::
 
-    llm-proxy provider add openai sk-xxx --owner-label alice --priority 10
+    # --- Provider keys (with budget) ---
+    llm-proxy provider add openai sk-xxx --owner-label alice --priority 10 \
+        --budget-type monthly --budget 1000000
+    llm-proxy provider budget <provider-id> --budget 2000000
+    llm-proxy provider budget <provider-id> --budget-type one_time
     llm-proxy provider list
     llm-proxy provider toggle <id>
     llm-proxy provider remove <id>
 
-    llm-proxy token create my-token alice --budget-type fixed --token-budget 100000
-    llm-proxy token list
-    llm-proxy token get <id>
-    llm-proxy token revoke <id>
-    llm-proxy token budget <id> --token-budget 500000
+    # --- Wallets (no direct budget — balance comes from linked providers) ---
+    llm-proxy wallet create my-wallet alice --valid-until 2027-01-01
+        --allowed-models coding,chat
+    llm-proxy wallet list
+    llm-proxy wallet get <id>
+    llm-proxy wallet revoke <id>
+    llm-proxy wallet add-provider <wallet-id> --provider <provider-id> --credit 500000
+    llm-proxy wallet remove-provider <wallet-id> --provider <provider-id>
+    llm-proxy wallet list-providers <wallet-id>
 
+    # --- Deprecated token aliases ---
+    llm-proxy token create ...   # → wallet create (ignores budget options)
+    llm-proxy token list ...     # → wallet list
+    llm-proxy token get ...      # → wallet get
+    llm-proxy token revoke ...   # → wallet revoke
+    # token budget is GONE (error with explanation)
+
+    # --- Model mappings ---
     llm-proxy mapping add coding openai gpt-4o --priority 10
     llm-proxy mapping list
     llm-proxy mapping toggle <id>
     llm-proxy mapping remove <id>
 
-    llm-proxy usage [--limit 20] [--abstraction coding]
+    # --- Usage & stats ---
+    llm-proxy usage [--limit 20] [--wallet-id <id>] [--abstraction coding]
     llm-proxy stats
 
+    # --- Config ---
     llm-proxy config set proxy_url http://localhost:8000
     llm-proxy config show
 
+    # --- Serve ---
     llm-proxy serve status
     llm-proxy serve start [--port 8080] [--reload]
     llm-proxy serve stop
@@ -88,6 +107,11 @@ def _abort(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
+def _deprecated(use_instead: str) -> None:
+    """Print a deprecation warning to stderr."""
+    click.echo(f"Warning: 'token' is deprecated, use '{use_instead}' instead.", err=True)
+
+
 # ====================================================================================================
 # Config commands
 # ====================================================================================================
@@ -138,18 +162,22 @@ def provider() -> None:
 @click.argument("api_key")
 @click.option("--owner-label", default="default", help="Owner label (e.g. alice, team-ai)")
 @click.option("--priority", default=0, type=int, help="Key priority (higher = preferred)")
-def provider_add(provider_name: str, api_key: str, owner_label: str, priority: int) -> None:
-    """Register a new provider API key."""
+@click.option("--budget-type", type=click.Choice(["one_time", "monthly"]), required=True, help="Credit type: one_time (fixed) or monthly (resets each cycle)")
+@click.option("--budget", type=int, required=True, help="Credit amount for this provider")
+def provider_add(provider_name: str, api_key: str, owner_label: str, priority: int, budget_type: str, budget: int) -> None:
+    """Register a new provider API key with budget configuration."""
     try:
-        result = _client().provider_add(provider_name, api_key, owner_label=owner_label, priority=priority)
+        result = _client().provider_add(provider_name, api_key, owner_label=owner_label, priority=priority, budget_type=budget_type, budget_amount=budget)
     except Exception as exc:
         _abort(str(exc))
     click.echo(f"✓ Provider key registered:")
-    click.echo(f"  ID          : {result['id']}")
-    click.echo(f"  Provider    : {result['provider']}")
-    click.echo(f"  Owner label : {result['owner_label']}")
-    click.echo(f"  Priority    : {result['priority']}")
-    click.echo(f"  Active      : {result['is_active']}")
+    click.echo(f"  ID           : {result['id']}")
+    click.echo(f"  Provider     : {result['provider']}")
+    click.echo(f"  Owner label  : {result['owner_label']}")
+    click.echo(f"  Priority     : {result['priority']}")
+    click.echo(f"  Budget type  : {result.get('budget_type', '—')}")
+    click.echo(f"  Budget       : {result.get('budget_amount', '—'):,}")
+    click.echo(f"  Active       : {result['is_active']}")
 
 
 @provider.command("list")
@@ -205,14 +233,195 @@ def provider_remove(key_id: str) -> None:
     click.echo(f"✓ Provider key {key_id[:8]} removed.")
 
 
+@provider.command("budget")
+@click.argument("provider_id")
+@click.option("--budget", type=int, help="New budget amount")
+@click.option("--budget-type", type=click.Choice(["one_time", "monthly"]), help="New budget type")
+def provider_budget(provider_id: str, budget: Optional[int], budget_type: Optional[str]) -> None:
+    """Update provider budget configuration (amount or type)."""
+    if budget is None and budget_type is None:
+        _abort("Either --budget or --budget-type must be specified")
+    try:
+        result = _client().provider_budget(provider_id, budget_amount=budget, budget_type=budget_type)
+    except Exception as exc:
+        _abort(str(exc))
+    click.echo(f"✓ Provider {provider_id[:8]} updated:")
+    if budget is not None:
+        click.echo(f"  Budget amount: {result.get('budget_amount', '—'):,}")
+    if budget_type is not None:
+        click.echo(f"  Budget type  : {result.get('budget_type', '—')}")
+
+
 # ====================================================================================================
-# Access token commands
+# Wallet commands (formerly access tokens)
+# ====================================================================================================
+
+
+@cli.group()
+def wallet() -> None:
+    """Manage wallets (formerly access tokens)."""
+
+
+@wallet.command("create")
+@click.argument("label")
+@click.argument("owner")
+@click.option("--valid-until", help="Expiry date (ISO-8601, e.g. 2026-12-31)")
+@click.option("--allowed-models", help="Comma-separated abstractions (e.g. coding,chat)")
+def wallet_create(
+    label: str,
+    owner: str,
+    valid_until: Optional[str],
+    allowed_models: Optional[str],
+) -> None:
+    """Create a new wallet."""
+    parsed_until: Optional[datetime] = None
+    if valid_until:
+        try:
+            parsed_until = datetime.fromisoformat(valid_until)
+        except ValueError:
+            _abort(f"Invalid ISO-8601 date: {valid_until}")
+
+    parsed_models: Optional[List[str]] = None
+    if allowed_models:
+        parsed_models = [m.strip() for m in allowed_models.split(",")]
+
+    try:
+        result = _client().wallet_create(
+            label=label,
+            owner=owner,
+            valid_until=parsed_until,
+            allowed_models=parsed_models,
+        )
+    except Exception as exc:
+        _abort(str(exc))
+
+    click.echo("✓ Wallet created!")
+    click.echo(f"  ID         : {result['wallet_id']}")
+    click.echo(f"  Label      : {result['label']}")
+    click.echo(f"  Owner      : {result['owner']}")
+    click.echo(f"  Expiry     : {result.get('valid_until', 'never')}")
+    click.echo(f"  Allowed    : {', '.join(result['allowed_models']) if result.get('allowed_models') else 'all'}")
+    click.echo(f"  Status     : {result['status']}")
+    click.echo(f"  Created    : {result['created_at']}")
+    click.echo(f"  Balance    : {result.get('balance', 0):,} tokens")
+
+
+@wallet.command("list")
+@click.option("--owner", help="Filter by owner")
+def wallet_list(owner: Optional[str]) -> None:
+    """List wallets."""
+    try:
+        wallets = _client().wallet_list(owner=owner)
+    except Exception as exc:
+        _abort(str(exc))
+    if not wallets:
+        click.echo("No wallets.")
+        return
+    rows = []
+    for w in wallets:
+        rows.append([
+            w["id"][:8],
+            w["label"],
+            w["owner"],
+            f'{w.get("balance", 0):,}',
+            w["status"],
+        ])
+    click.echo(_fmt_table(
+        ["ID", "Label", "Owner", "Balance", "Status"],
+        rows,
+    ))
+
+
+@wallet.command("get")
+@click.argument("wallet_id")
+def wallet_get(wallet_id: str) -> None:
+    """Show details for a single wallet."""
+    try:
+        w = _client().wallet_get(wallet_id)
+    except Exception as exc:
+        _abort(str(exc))
+    click.echo(f"  ID           : {w['id']}")
+    click.echo(f"  Label        : {w['label']}")
+    click.echo(f"  Owner        : {w['owner']}")
+    click.echo(f"  Expiry       : {w.get('valid_until', 'never')}")
+    click.echo(f"  Allowed      : {', '.join(w['allowed_models']) if w.get('allowed_models') else 'all'}")
+    click.echo(f"  Status       : {w['status']}")
+    click.echo(f"  Created      : {w['created_at']}")
+    click.echo(f"  Balance      : {w.get('balance', 0):,} tokens")
+
+
+@wallet.command("revoke")
+@click.argument("wallet_id")
+def wallet_revoke(wallet_id: str) -> None:
+    """Revoke a wallet."""
+    try:
+        _client().wallet_revoke(wallet_id)
+    except Exception as exc:
+        _abort(str(exc))
+    click.echo(f"✓ Wallet {wallet_id[:8]} revoked.")
+
+
+@wallet.command("add-provider")
+@click.argument("wallet_id")
+@click.option("--provider", required=True, help="Provider ID")
+@click.option("--credit", required=True, type=int, help="Credit amount to add from provider")
+def wallet_add_provider(wallet_id: str, provider: str, credit: int) -> None:
+    """Link a provider to wallet and transfer credit."""
+    try:
+        result = _client().wallet_add_provider(wallet_id, provider_id=provider, credit_amount=credit)
+    except Exception as exc:
+        _abort(str(exc))
+    click.echo(f"✓ Added provider {provider[:8]} to wallet {wallet_id[:8]}:")
+    click.echo(f"  Credit transferred: {credit:,} tokens")
+    click.echo(f"  Wallet new balance: {result.get('new_balance', 0):,} tokens")
+    click.echo(f"  Provider remaining: {result.get('provider_remaining', 0):,} tokens")
+
+
+@wallet.command("remove-provider")
+@click.argument("wallet_id")
+@click.option("--provider", required=True, help="Provider ID")
+def wallet_remove_provider(wallet_id: str, provider: str) -> None:
+    """Unlink a provider from wallet (does not refund credit)."""
+    try:
+        _client().wallet_remove_provider(wallet_id, provider_id=provider)
+    except Exception as exc:
+        _abort(str(exc))
+    click.echo(f"✓ Removed provider {provider[:8]} from wallet {wallet_id[:8]} (credit not refunded).")
+
+
+@wallet.command("list-providers")
+@click.argument("wallet_id")
+def wallet_list_providers(wallet_id: str) -> None:
+    """List providers linked to a wallet."""
+    try:
+        links = _client().wallet_list_providers(wallet_id)
+    except Exception as exc:
+        _abort(str(exc))
+    if not links:
+        click.echo("No providers linked to this wallet.")
+        return
+    rows = []
+    for l in links:
+        rows.append([
+            l["provider_id"][:8],
+            l["provider_name"],
+            f'{l["credited_amount"]:,}',
+            l["linked_at"],
+        ])
+    click.echo(_fmt_table(
+        ["Provider ID", "Provider", "Credited", "Linked At"],
+        rows,
+    ))
+
+
+# ====================================================================================================
+# Deprecated token commands (aliases for wallet)
 # ====================================================================================================
 
 
 @cli.group()
 def token() -> None:
-    """Manage proxy access tokens."""
+    """Manage proxy access tokens (DEPRECATED — use wallet)."""
 
 
 @token.command("create")
@@ -232,7 +441,9 @@ def token_create(
     allowed_models: Optional[str],
     refresh_period: Optional[str],
 ) -> None:
-    """Create a new access token."""
+    """Create a new access token (DEPRECATED)."""
+    _deprecated("wallet create")
+    # Note: Budget options are ignored in wallet model
     parsed_until: Optional[datetime] = None
     if valid_until:
         try:
@@ -245,54 +456,50 @@ def token_create(
         parsed_models = [m.strip() for m in allowed_models.split(",")]
 
     try:
-        result = _client().token_create(
+        result = _client().wallet_create(
             label=label,
             owner=owner,
-            budget_type=budget_type,
-            token_budget=token_budget,
             valid_until=parsed_until,
             allowed_models=parsed_models,
-            refresh_period=refresh_period,
         )
     except Exception as exc:
         _abort(str(exc))
 
-    click.echo("✓ Access token created!")
-    click.echo(f"  Raw token  : {result['raw_token']}")
-    click.echo(f"  ID         : {result['token_id']}")
+    click.echo("✓ Access token created (via wallet)!")
+    click.echo(f"  Raw token  : {result.get('raw_token', 'N/A — wallet does not expose raw token')}")
+    click.echo(f"  ID         : {result['wallet_id']}")
     click.echo(f"  Label      : {result['label']}")
     click.echo(f"  Owner      : {result['owner']}")
-    click.echo(f"  Budget     : {result.get('budget_type', '—')} "
-               f"({result.get('token_budget', 'unlimited')})")
     click.echo(f"  Expiry     : {result.get('valid_until', 'never')}")
-    click.secho("  ⚠ Save the raw token now — it won't be shown again!", fg="yellow")
+    click.echo(f"  Allowed    : {', '.join(result['allowed_models']) if result.get('allowed_models') else 'all'}")
+    click.echo(f"  Status     : {result['status']}")
+    click.echo(f"  Created    : {result['created_at']}")
+    click.echo(f"  Balance    : {result.get('balance', 0):,} tokens")
 
 
 @token.command("list")
 @click.option("--owner", help="Filter by owner")
 def token_list(owner: Optional[str]) -> None:
-    """List access tokens."""
+    """List access tokens (DEPRECATED)."""
+    _deprecated("wallet list")
     try:
-        tokens = _client().token_list(owner=owner)
+        wallets = _client().wallet_list(owner=owner)
     except Exception as exc:
         _abort(str(exc))
-    if not tokens:
+    if not wallets:
         click.echo("No access tokens.")
         return
     rows = []
-    for t in tokens:
-        budget = f'{t["token_budget"]:,}' if t.get("token_budget") else "∞"
+    for w in wallets:
         rows.append([
-            t["id"][:8],
-            t["label"],
-            t["owner"],
-            t["budget_type"],
-            budget,
-            f'{t["tokens_used"]:,}',
-            t["status"],
+            w["id"][:8],
+            w["label"],
+            w["owner"],
+            f'{w.get("balance", 0):,}',
+            w["status"],
         ])
     click.echo(_fmt_table(
-        ["ID", "Label", "Owner", "Type", "Budget", "Used", "Status"],
+        ["ID", "Label", "Owner", "Balance", "Status"],
         rows,
     ))
 
@@ -300,45 +507,46 @@ def token_list(owner: Optional[str]) -> None:
 @token.command("get")
 @click.argument("token_id")
 def token_get(token_id: str) -> None:
-    """Show details for a single access token."""
+    """Show details for a single access token (DEPRECATED)."""
+    _deprecated("wallet get")
     try:
-        t = _client().token_get(token_id)
+        w = _client().wallet_get(token_id)
     except Exception as exc:
         _abort(str(exc))
-    click.echo(f"  ID           : {t['id']}")
-    click.echo(f"  Label        : {t['label']}")
-    click.echo(f"  Owner        : {t['owner']}")
-    click.echo(f"  Budget type  : {t['budget_type']}")
-    click.echo(f"  Token budget : {t.get('token_budget', 'unlimited')}")
-    click.echo(f"  Tokens used  : {t['tokens_used']:,}")
-    click.echo(f"  Allowed      : {', '.join(t['allowed_models']) if t.get('allowed_models') else 'all'}")
-    click.echo(f"  Status       : {t['status']}")
-    click.echo(f"  Expires      : {t.get('valid_until', 'never')}")
-    click.echo(f"  Refresh      : {t.get('refresh_period', '—')}")
-    click.echo(f"  Created      : {t['created_at']}")
+    click.echo(f"  ID           : {w['id']}")
+    click.echo(f"  Label        : {w['label']}")
+    click.echo(f"  Owner        : {w['owner']}")
+    click.echo(f"  Expiry       : {w.get('valid_until', 'never')}")
+    click.echo(f"  Allowed      : {', '.join(w['allowed_models']) if w.get('allowed_models') else 'all'}")
+    click.echo(f"  Status       : {w['status']}")
+    click.echo(f"  Created      : {w['created_at']}")
+    click.echo(f"  Balance      : {w.get('balance', 0):,} tokens")
 
 
 @token.command("revoke")
 @click.argument("token_id")
 def token_revoke(token_id: str) -> None:
-    """Revoke an access token."""
+    """Revoke an access token (DEPRECATED)."""
+    _deprecated("wallet revoke")
     try:
-        _client().token_revoke(token_id)
+        _client().wallet_revoke(token_id)
     except Exception as exc:
         _abort(str(exc))
-    click.echo(f"✓ Token {token_id[:8]} revoked.")
+    click.echo(f"✓ Token {token_id[:8]} revoked (via wallet).")
 
 
 @token.command("budget")
 @click.argument("token_id")
 @click.option("--token-budget", required=True, type=int, help="New token budget")
 def token_budget_cmd(token_id: str, token_budget: int) -> None:
-    """Update the token budget (reactivates if exhausted)."""
-    try:
-        result = _client().token_budget(token_id, token_budget)
-    except Exception as exc:
-        _abort(str(exc))
-    click.echo(f"✓ Token {token_id[:8]} budget updated to {result['new_budget']:,}.")
+    """Update the token budget (DEPRECATED — wallets derive balance from providers)."""
+    _deprecated("wallet model does not support direct budget updates")
+    _abort("Error: token budget command is removed. Wallet balance is derived from linked providers. Use 'wallet add-provider' to increase balance.")
+
+
+# ====================================================================================================
+# Model mapping commands
+# ====================================================================================================
 
 
 # ====================================================================================================
@@ -426,14 +634,14 @@ def mapping_remove(mapping_id: str) -> None:
 
 
 @cli.command()
-@click.option("--token-id", help="Filter by access token ID")
+@click.option("--wallet-id", help="Filter by wallet ID")
 @click.option("--provider", "provider_filter", help="Filter by provider")
 @click.option("--abstraction", help="Filter by abstraction")
 @click.option("--limit", default=20, type=int, help="Max entries (max 500)")
-def usage(token_id: Optional[str], provider_filter: Optional[str], abstraction: Optional[str], limit: int) -> None:
+def usage(wallet_id: Optional[str], provider_filter: Optional[str], abstraction: Optional[str], limit: int) -> None:
     """Query the usage / audit log."""
     try:
-        entries = _client().usage(token_id=token_id, provider=provider_filter, abstraction=abstraction, limit=limit)
+        entries = _client().usage(wallet_id=wallet_id, provider=provider_filter, abstraction=abstraction, limit=limit)
     except Exception as exc:
         _abort(str(exc))
     if not entries:

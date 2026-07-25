@@ -60,24 +60,30 @@ class AdminClient:
         *,
         owner_label: str = "default",
         priority: int = 0,
+        budget_type: str,
+        budget_amount: int,
     ) -> Dict[str, Any]:
         """
-        Register a new provider API key.
+        Register a new provider API key with budget configuration.
 
         Args:
             provider: Provider name (openai, anthropic, google).
             api_key: The raw API key value.
             owner_label: Human-readable owner label.
             priority: Key priority (higher = preferred).
+            budget_type: Credit type: "one_time" or "monthly".
+            budget_amount: Credit amount for this provider.
 
         Returns:
-            The created key metadata.
+            The created provider metadata.
         """
         r = self._client.post("/admin/provider-keys", json={
             "owner_label": owner_label,
             "provider": provider,
             "api_key": api_key,
             "priority": priority,
+            "budget_type": budget_type,
+            "budget_amount": budget_amount,
         })
         r.raise_for_status()
         return r.json()
@@ -121,107 +127,167 @@ class AdminClient:
         r = self._client.delete(f"/admin/provider-keys/{key_id}")
         r.raise_for_status()
 
+    def provider_budget(
+        self,
+        provider_id: str,
+        *,
+        budget_amount: Optional[int] = None,
+        budget_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Update provider budget configuration (amount or type).
+
+        Args:
+            provider_id: Provider UUID.
+            budget_amount: New budget amount (optional).
+            budget_type: New budget type ("one_time" or "monthly") (optional).
+
+        Returns:
+            Updated provider metadata.
+        """
+        if budget_amount is None and budget_type is None:
+            raise ValueError("Either budget_amount or budget_type must be provided")
+        params: Dict[str, Any] = {}
+        if budget_amount is not None:
+            params["budget_amount"] = budget_amount
+        if budget_type is not None:
+            params["budget_type"] = budget_type
+        r = self._client.patch(f"/admin/provider-keys/{provider_id}/budget", params=params)
+        r.raise_for_status()
+        return r.json()
+
     # ------------------------------------------------------------------
-    # Access Tokens
+    # Wallets (formerly access tokens)
     # ------------------------------------------------------------------
 
-    def token_create(
+    def wallet_create(
         self,
         label: str,
         owner: str,
         *,
-        budget_type: str = "fixed",
-        token_budget: Optional[int] = None,
         valid_until: Optional[datetime] = None,
         allowed_models: Optional[List[str]] = None,
-        refresh_period: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Create a new access token.
+        Create a new wallet.
 
         Args:
             label: Human-readable label.
             owner: Owner identifier.
-            budget_type: ``fixed``, ``time_based``, or ``unlimited``.
-            token_budget: Max tokens (None = unlimited budget).
             valid_until: Optional expiry datetime.
             allowed_models: List of allowed abstractions ([] = all).
-            refresh_period: ``daily`` | ``weekly`` | ``monthly``.
 
         Returns:
-            Token metadata including the **raw token** (shown once).
+            Wallet metadata.
         """
         body: Dict[str, Any] = {
             "label": label,
             "owner": owner,
-            "budget_type": budget_type,
-            "token_budget": token_budget,
             "allowed_models": allowed_models or [],
         }
         if valid_until:
             body["valid_until"] = valid_until.isoformat()
-        if refresh_period:
-            body["refresh_period"] = refresh_period
-
-        r = self._client.post("/admin/tokens", json=body)
+        r = self._client.post("/admin/wallets", json=body)
         r.raise_for_status()
         return r.json()
 
-    def token_list(self, owner: Optional[str] = None) -> List[Dict[str, Any]]:
+    def wallet_list(self, owner: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        List access tokens.
+        List wallets.
 
         Args:
             owner: Optional owner filter.
 
         Returns:
-            List of token metadata.
+            List of wallet metadata.
         """
         params = {"owner": owner} if owner else {}
-        r = self._client.get("/admin/tokens", params=params)
+        r = self._client.get("/admin/wallets", params=params)
         r.raise_for_status()
         return r.json()
 
-    def token_get(self, token_id: str) -> Dict[str, Any]:
+    def wallet_get(self, wallet_id: str) -> Dict[str, Any]:
         """
-        Retrieve a single access token by ID.
+        Retrieve a single wallet by ID.
 
         Args:
-            token_id: Token UUID.
+            wallet_id: Wallet UUID.
 
         Returns:
-            Token metadata.
+            Wallet metadata.
         """
-        r = self._client.get(f"/admin/tokens/{token_id}")
+        r = self._client.get(f"/admin/wallets/{wallet_id}")
         r.raise_for_status()
         return r.json()
 
-    def token_revoke(self, token_id: str) -> Dict[str, Any]:
+    def wallet_revoke(self, wallet_id: str) -> Dict[str, Any]:
         """
-        Revoke an access token.
+        Revoke a wallet.
 
         Args:
-            token_id: Token UUID.
+            wallet_id: Wallet UUID.
 
         Returns:
             Confirmation message.
         """
-        r = self._client.patch(f"/admin/tokens/{token_id}/revoke")
+        r = self._client.patch(f"/admin/wallets/{wallet_id}/revoke")
         r.raise_for_status()
         return r.json()
 
-    def token_budget(self, token_id: str, token_budget: int) -> Dict[str, Any]:
+    def wallet_add_provider(
+        self,
+        wallet_id: str,
+        *,
+        provider_id: str,
+        credit_amount: int,
+    ) -> Dict[str, Any]:
         """
-        Update the token budget (and reactivate if exhausted).
+        Link a provider to wallet and transfer credit.
 
         Args:
-            token_id: Token UUID.
-            token_budget: New budget value (must be positive).
+            wallet_id: Wallet UUID.
+            provider_id: Provider UUID.
+            credit_amount: Amount of credit to transfer from provider to wallet.
 
         Returns:
-            Confirmation with new budget.
+            Result of the operation.
         """
-        r = self._client.patch(f"/admin/tokens/{token_id}/budget", params={"token_budget": token_budget})
+        r = self._client.post(
+            f"/admin/wallets/{wallet_id}/providers",
+            json={"provider_id": provider_id, "credit_amount": credit_amount},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def wallet_remove_provider(
+        self,
+        wallet_id: str,
+        *,
+        provider_id: str,
+    ) -> None:
+        """
+        Unlink a provider from wallet (does not refund credit).
+
+        Args:
+            wallet_id: Wallet UUID.
+            provider_id: Provider UUID.
+        """
+        r = self._client.delete(
+            f"/admin/wallets/{wallet_id}/providers/{provider_id}"
+        )
+        r.raise_for_status()
+
+    def wallet_list_providers(self, wallet_id: str) -> List[Dict[str, Any]]:
+        """
+        List providers linked to a wallet.
+
+        Args:
+            wallet_id: Wallet UUID.
+
+        Returns:
+            List of provider-link metadata.
+        """
+        r = self._client.get(f"/admin/wallets/{wallet_id}/providers")
         r.raise_for_status()
         return r.json()
 
@@ -300,7 +366,7 @@ class AdminClient:
     def usage(
         self,
         *,
-        token_id: Optional[str] = None,
+        wallet_id: Optional[str] = None,
         provider: Optional[str] = None,
         abstraction: Optional[str] = None,
         limit: int = 50,
@@ -309,7 +375,7 @@ class AdminClient:
         Query the usage / audit log.
 
         Args:
-            token_id: Optional access token filter.
+            wallet_id: Optional wallet filter.
             provider: Optional provider filter.
             abstraction: Optional abstraction filter.
             limit: Max entries to return (max 500).
@@ -318,8 +384,8 @@ class AdminClient:
             List of usage log entries.
         """
         params: Dict[str, Any] = {"limit": limit}
-        if token_id:
-            params["token_id"] = token_id
+        if wallet_id:
+            params["wallet_id"] = wallet_id
         if provider:
             params["provider"] = provider
         if abstraction:
@@ -330,7 +396,7 @@ class AdminClient:
 
     def stats(self) -> Dict[str, Any]:
         """
-        Aggregate token usage per abstraction and provider.
+        Aggregate wallet usage per abstraction and provider.
 
         Returns:
             Stats dict.

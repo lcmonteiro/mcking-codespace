@@ -1,0 +1,93 @@
+<mxfile host="drawio-headless" compressed="false" version="0.1.0">
+  <diagram id="p1" name="LLM Proxy System Architecture">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="client_zone" value="Client Zone" vertex="1" parent="1" style="rounded=1;fillColor=#f8fafc;strokeColor=#94a3b8;dashed=1;fontStyle=6;fontSize=11;">
+          <mxGeometry x="40" y="58" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="proxy_zone" value="Proxy Zone" vertex="1" parent="1" style="rounded=1;fillColor=#f8fafc;strokeColor=#64748b;dashed=1;fontStyle=6;fontSize=11;">
+          <mxGeometry x="40" y="188" width="720" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="provider_zone" value="Provider Zone" vertex="1" parent="1" style="rounded=1;fillColor=#f8fafc;strokeColor=#94a3b8;dashed=1;fontStyle=6;fontSize=11;">
+          <mxGeometry x="40" y="578" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="openai_sdk" value="OpenAI SDK" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.client;">
+          <mxGeometry x="80" y="86" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="curl_http" value="curl / HTTP REST" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet;">
+          <mxGeometry x="315" y="86" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="langchain" value="LangChain SDK" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.internet;">
+          <mxGeometry x="550" y="86" width="170" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="fastapi_app" value="FastAPI Application" vertex="1" parent="1" style="verticalLabelPosition=bottom;html=0;verticalAlign=top;align=center;strokeColor=none;fillColor=#5A6C86;shape=mxgraph.azure.cloud;">
+          <mxGeometry x="80" y="210" width="640" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="guards" value="Guards
+auth · admin" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.queue;">
+          <mxGeometry x="110" y="275" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="routes" value="Routes
+inference · admin" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.queue;">
+          <mxGeometry x="110" y="350" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="pipeline" value="ProxyRunnable Pipeline" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.database;">
+          <mxGeometry x="370" y="275" width="320" height="230" as="geometry"/>
+        </mxCell>
+        <mxCell id="budget_auth" value="BudgetAuthRunnable" vertex="1" parent="1" style="rounded=1;fillColor=#8b5cf6;fontColor=#ffffff;fontStyle=1;">
+          <mxGeometry x="400" y="312" width="260" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="model_resolve" value="ModelResolveRunnable" vertex="1" parent="1" style="rounded=1;fillColor=#8b5cf6;fontColor=#ffffff;fontStyle=1;">
+          <mxGeometry x="400" y="350" width="260" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="llm_call" value="LLM Call" vertex="1" parent="1" style="rounded=1;fillColor=#8b5cf6;fontColor=#ffffff;fontStyle=1;">
+          <mxGeometry x="400" y="388" width="260" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="budget_deduct" value="BudgetDeductRunnable" vertex="1" parent="1" style="rounded=1;fillColor=#8b5cf6;fontColor=#ffffff;fontStyle=1;">
+          <mxGeometry x="400" y="426" width="260" height="32" as="geometry"/>
+        </mxCell>
+        <mxCell id="database" value="Database
+(SQLite)" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.database;">
+          <mxGeometry x="110" y="430" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="openapi" value="OpenAI API
+gpt-4o · o1-mini" vertex="1" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#5A6C86;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=0;fontSize=12;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.queue;">
+          <mxGeometry x="140" y="606" width="200" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="anthropic" value="Anthropic API
+claude-3-5-sonnet" vertex="1" parent="1" style="verticalLabelPosition=bottom;html=0;verticalAlign=top;align=center;strokeColor=none;fillColor=#5A6C86;shape=mxgraph.azure.cloud;">
+          <mxGeometry x="460" y="606" width="200" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="openai_sdk" target="fastapi_app" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="curl_http" target="fastapi_app" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="langchain" target="fastapi_app" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="guards" target="database" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="routes" target="pipeline" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="budget_auth" target="model_resolve" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="model_resolve" target="llm_call" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="llm_call" target="budget_deduct" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="budget_deduct" target="database" style="edgeStyle=orthogonalEdgeStyle;html=0;endArrow=open;startArrow=none;rounded=0;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

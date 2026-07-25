@@ -2,7 +2,7 @@
 SQLAlchemy ORM models for the LLM Proxy.
 
 Defines the database schema: provider keys, model mappings, access tokens,
-and usage / audit log.
+wallets, and usage / audit log.
 """
 import enum
 import uuid
@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     JSON,
     Enum as SAEnum,
+    ARRAY,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -102,11 +103,19 @@ class ProviderKey(Base):
     priority      : Column = Column(Integer, default=0)             # higher = preferred
     monthly_limit : Column = Column(Integer, nullable=True)         # optional per-key cap (tokens)
     tokens_used   : Column = Column(Integer, default=0)
+
+    # Credit model fields (used by wallet flow)
+    credit_model  : Column = Column(String, nullable=False, default="one_time")   # "one_time" | "monthly_reset"
+    budget_amount : Column = Column(Integer, nullable=True)         # total budget for this provider key
+    budget_spent  : Column = Column(Integer, default=0)             # cumulative spend since last reset
+    last_reset_at : Column = Column(DateTime(timezone=True), nullable=True)  # for monthly_reset tracking
+
     created_at    : Column = Column(DateTime(timezone=True), default=utcnow)
     last_used_at  : Column = Column(DateTime(timezone=True), nullable=True)
     metadata_     : Column = Column("metadata", JSON, default=dict)
 
-    usages = relationship("UsageLog", back_populates="provider_key")
+    usages        = relationship("UsageLog", back_populates="provider_key")
+    wallet_links  = relationship("WalletProviderLink", back_populates="provider_key")
 
 
 # ====================================================================================================
@@ -137,7 +146,7 @@ class ModelMapping(Base):
 
 
 # ====================================================================================================
-# Access Tokens
+# Access Tokens (kept for backward compatibility, but not used in new wallet flow)
 # ====================================================================================================
 
 
@@ -179,6 +188,60 @@ class AccessToken(Base):
 
 
 # ====================================================================================================
+# Wallets (replaces AccessToken for budget management)
+# ====================================================================================================
+
+
+class Wallet(Base):
+    """
+    A wallet holds accumulated credit from provider keys and is used for authentication.
+
+    Wallets do not have their own budget that refreshes; instead, they draw credit
+    from linked provider keys. The wallet's balance is cumulative (total credited)
+    and never decreases on usage.
+    """
+
+    __tablename__ = "wallets"
+
+    id              : Column = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    token_hash      : Column = Column(String, unique=True, nullable=True, index=True)  # nullable until set on creation
+    label           : Column = Column(String, nullable=False)          # human-readable name
+    owner           : Column = Column(String, nullable=False)          # owner identifier
+    balance         : Column = Column(Integer, nullable=False, default=0)  # total credited from providers
+    status          : Column = Column(String, nullable=False, default="active")  # active | revoked
+    allowed_models  : Column = Column(ARRAY(String), nullable=True)      # [] = all abstractions
+    valid_until     : Column = Column(DateTime(timezone=True), nullable=True)
+    metadata_       : Column = Column("metadata", JSON, default=dict)
+    created_at      : Column = Column(DateTime(timezone=True), default=utcnow)
+    updated_at      : Column = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    # Relationships
+    provider_links = relationship("WalletProviderLink", back_populates="wallet", cascade="all, delete-orphan")
+    usages = relationship("UsageLog", back_populates="wallet")
+
+
+class WalletProviderLink(Base):
+    """
+    Links a provider key to a wallet, transferring a credited amount of budget.
+
+    The credited amount is added to the wallet's balance (cumulative) and deducted
+    from the provider's available budget according to its credit model.
+    """
+
+    __tablename__ = "wallet_provider_links"
+
+    id              : Column = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    wallet_id       : Column = Column(String, ForeignKey("wallets.id"), nullable=False, index=True)
+    provider_key_id : Column = Column(String, ForeignKey("provider_keys.id"), nullable=False, index=True)
+    credited_amount : Column = Column(Integer, nullable=False)  # amount of credit transferred to wallet
+    linked_at       : Column = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    # Relationships
+    wallet     = relationship("Wallet", back_populates="provider_links")
+    provider_key = relationship("ProviderKey", back_populates="wallet_links")
+
+
+# ====================================================================================================
 # Usage / Audit Log
 # ====================================================================================================
 
@@ -189,8 +252,8 @@ class UsageLog(Base):
     __tablename__ = "usage_logs"
 
     id              : Column = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    access_token_id : Column = Column(String, ForeignKey("access_tokens.id"), nullable=True)
-    provider_key_id : Column = Column(String, ForeignKey("provider_keys.id"), nullable=True)
+    wallet_id       : Column = Column(String, ForeignKey("wallets.id"), nullable=True, index=True)
+    provider_key_id : Column = Column(String, ForeignKey("provider_keys.id"), nullable=True, index=True)
 
     abstraction       : Column = Column(String, nullable=True)          # virtual model used
     provider          : Column = Column(String, nullable=True)
@@ -210,5 +273,5 @@ class UsageLog(Base):
 
     created_at : Column = Column(DateTime(timezone=True), default=utcnow, index=True)
 
-    access_token = relationship("AccessToken", back_populates="usages")
+    wallet     = relationship("Wallet", back_populates="usages")
     provider_key = relationship("ProviderKey", back_populates="usages")

@@ -14,12 +14,13 @@ from typing import Any, Optional
 
 from langchain_core.runnables import Runnable, RunnableConfig
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import AccessToken, BudgetType, ModelAbstraction, RequestStatus, TokenStatus
+from src.db.models import Wallet, WalletProviderLink, ProviderKey, ModelAbstraction
 from src.db.session import db_contex
-from src.services.budget import BudgetError, _hash_token, _period_delta
+from src.services.budget import BudgetError, _hash_token
+from src.services.credit_models import CreditModelFactory, CreditState
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class BudgetAuthOutput(BaseModel):
 
     success       : bool           = False
     access_token  : Optional[Any]  = None
-    status        : RequestStatus  = RequestStatus.BLOCKED
+    status        : str            = "BLOCKED"  # Using string to match RequestStatus values
     error_message : Optional[str]   = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -61,7 +62,7 @@ class BudgetAuthRunnable(Runnable[BudgetAuthInput, BudgetAuthOutput]):
             BudgetAuthInput(raw_token="llmp_...", abstraction=ModelAbstraction.CODING)
         )
         if result.success:
-            token = result.access_token
+            wallet = result.access_token
     """
 
     async def ainvoke(
@@ -73,146 +74,105 @@ class BudgetAuthRunnable(Runnable[BudgetAuthInput, BudgetAuthOutput]):
         token_hash = _hash_token(input.raw_token)
 
         async with db_contex() as db:
+            # Look up wallet by token_hash
             result = await db.execute(
-                select(AccessToken).where(AccessToken.token_hash == token_hash)
+                select(Wallet).where(Wallet.token_hash == token_hash)
             )
-            token: Optional[AccessToken] = result.scalars().first()
+            wallet: Optional[Wallet] = result.scalars().first()
 
-            if token is None:
+            if wallet is None:
                 return BudgetAuthOutput(
                     success       = False,
-                    status        = RequestStatus.BLOCKED,
+                    status        = "BLOCKED",
                     error_message = "Invalid access token.",
                 )
 
-            await self._maybe_refresh(db, token)
-
-            try:
-                self._assert_active(token)
-                self._assert_time_window(token)
-                self._assert_budget(token)
-                self._assert_model_allowed(token, input.abstraction)
-                await db.commit()
-                return BudgetAuthOutput(
-                    success      = True,
-                    access_token = token,
-                    status       = RequestStatus.SUCCESS,
-                )
-            except BudgetError as exc:
+            # Check wallet status
+            if wallet.status != "active":
                 return BudgetAuthOutput(
                     success       = False,
-                    status        = exc.status,
-                    error_message = str(exc),
+                    status        = "BLOCKED",
+                    error_message = f"Wallet is not active (status: {wallet.status}).",
                 )
 
-    # ==================================================================================================
-    # Private helpers
-    # ==================================================================================================
+            # Check validity window
+            now = datetime.now(timezone.utc)
+            if wallet.valid_until:
+                vu = wallet.valid_until
+                if vu.tzinfo is None:
+                    vu = vu.replace(tzinfo=timezone.utc)
+                if now > vu:
+                    return BudgetAuthOutput(
+                        success       = False,
+                        status        = "BLOCKED",
+                        error_message = "Wallet has expired (validity window exceeded).",
+                    )
 
-    @staticmethod
-    async def _maybe_refresh(db: AsyncSession, token: AccessToken) -> None:
-        """
-        Refresh the token budget if it is time-based and the refresh period has elapsed.
+            # Check allowed models
+            if wallet.allowed_models is not None and len(wallet.allowed_models) > 0:
+                if input.abstraction is None:
+                    # No abstraction specified, but wallet has restrictions -> not allowed
+                    return BudgetAuthOutput(
+                        success       = False,
+                        status        = "BLOCKED",
+                        error_message = "Wallet requires an abstraction to be specified.",
+                    )
+                if input.abstraction.value not in wallet.allowed_models:
+                    return BudgetAuthOutput(
+                        success       = False,
+                        status        = "BLOCKED",
+                        error_message = f"Wallet is not permitted to use '{input.abstraction.value}' model abstraction.",
+                    )
 
-        Args:
-            db    : Database session.
-            token : Access token to check.
-        """
-        if token.budget_type != BudgetType.TIME_BASED or not token.refresh_period:
-            return
-        now = datetime.now(timezone.utc)
-        last = token.last_refresh_at or token.valid_from
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        delta = _period_delta(token.refresh_period)
-        if delta and (now - last) >= delta:
-            await db.execute(
-                update(AccessToken)
-                .where(AccessToken.id == token.id)
-                .values(tokens_used=0, last_refresh_at=now, status=TokenStatus.ACTIVE)
+            # Check that at least one linked provider has available credit
+            # Fetch linked providers for this wallet
+            links_result = await db.execute(
+                select(WalletProviderLink, ProviderKey)
+                .join(ProviderKey, WalletProviderLink.provider_key_id == ProviderKey.id)
+                .where(WalletProviderLink.wallet_id == wallet.id)
             )
-            token.tokens_used = 0
-            token.status = TokenStatus.ACTIVE
+            links = links_result.all()
 
-    @staticmethod
-    def _assert_active(token: AccessToken) -> None:
-        """
-        Assert that the token status is active.
+            if not links:
+                return BudgetAuthOutput(
+                    success       = False,
+                    status        = "BLOCKED",
+                    error_message = "Wallet has no linked providers with credit.",
+                )
 
-        Args:
-            token : Access token to check.
+            # Check each linked provider for available credit
+            has_available_credit = False
+            for link, provider in links:
+                # Build credit state from provider fields
+                # Note: ProviderKey has credit_model, budget_amount, budget_spent, last_reset_at
+                credit_state = CreditState(
+                    budget_amount=provider.budget_amount,
+                    budget_spent=provider.budget_spent,
+                    last_reset_at=provider.last_reset_at or datetime.now(timezone.utc),
+                    credit_model=CreditModelType(provider.credit_model),  # Convert string to enum
+                )
 
-        Raises:
-            BudgetError : If the token is revoked, expired, or exhausted.
-        """
-        if token.status == TokenStatus.REVOKED:
-            raise BudgetError("Access token has been revoked.")
-        if token.status == TokenStatus.EXPIRED:
-            raise BudgetError("Access token has expired.")
-        if token.status == TokenStatus.EXHAUSTED:
-            raise BudgetError("Token budget exhausted. Request more tokens or wait for renewal.")
+                # Check if provider can spend at least 1 unit (we don't know the amount yet, but we just need to know if there's any credit)
+                # We'll check for an amount of 1 token (or 1 unit of credit). The actual deduction will happen later.
+                if credit_state.budget_available > 0:
+                    has_available_credit = True
+                    break
 
-    @staticmethod
-    def _assert_time_window(token: AccessToken) -> None:
-        """
-        Assert that the current time falls within the token's validity window.
+            if not has_available_credit:
+                return BudgetAuthOutput(
+                    success       = False,
+                    status        = "BLOCKED",
+                    error_message = "No linked provider has available credit.",
+                )
 
-        Args:
-            token : Access token to check.
-
-        Raises:
-            BudgetError : If the token is not yet valid or has expired.
-        """
-        now = datetime.now(timezone.utc)
-        vf = token.valid_from
-        if vf:
-            if vf.tzinfo is None:
-                vf = vf.replace(tzinfo=timezone.utc)
-            if now < vf:
-                raise BudgetError("Access token is not yet valid.")
-        vu = token.valid_until
-        if vu:
-            if vu.tzinfo is None:
-                vu = vu.replace(tzinfo=timezone.utc)
-            if now > vu:
-                raise BudgetError("Access token has expired (time window exceeded).")
-
-    @staticmethod
-    def _assert_budget(token: AccessToken) -> None:
-        """
-        Assert that the token budget has not been exhausted.
-
-        Args:
-            token : Access token to check.
-
-        Raises:
-            BudgetError : If the token's budget has been exhausted.
-        """
-        if token.budget_type == BudgetType.UNLIMITED:
-            return
-        if token.token_budget is None:
-            return
-        if token.tokens_used >= token.token_budget:
-            raise BudgetError("Token budget exhausted.")
-
-    @staticmethod
-    def _assert_model_allowed(
-        token: AccessToken, abstraction: Optional[ModelAbstraction]
-    ) -> None:
-        """
-        Assert that the requested model abstraction is permitted for this token.
-
-        Args:
-            token      : Access token to check.
-            abstraction : Requested model abstraction.
-
-        Raises:
-            BudgetError : If the abstraction is not in the token's allowed models.
-        """
-        if not token.allowed_models:
-            return
-        if abstraction and abstraction.value not in token.allowed_models:
-            raise BudgetError(
-                f"Access token is not permitted to use '{abstraction.value}' "
-                "model abstraction."
+            # All checks passed
+            await db.commit()
+            return BudgetAuthOutput(
+                success      = True,
+                access_token = wallet,
+                status       = "SUCCESS",
             )
+
+
+# Note: We removed the refresh logic because wallets do not have a budget that refreshes.
+# The budget is managed by the provider keys.
