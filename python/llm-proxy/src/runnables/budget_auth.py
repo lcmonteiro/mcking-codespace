@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.models import Wallet, WalletProviderLink, ProviderKey, ModelAbstraction
 from src.db.session import db_contex
 from src.services.budget import BudgetError, _hash_token
-from src.services.credit_models import CreditModelFactory, CreditState
+from src.services.credit_models import CreditModelFactory, CreditModelType, CreditState
 
 logger = logging.getLogger(__name__)
 

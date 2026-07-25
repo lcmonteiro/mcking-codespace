@@ -144,12 +144,15 @@ async def list_wallets(
     wallets = result.scalars().all()
     return [
         WalletResponse(
-            id         = w.id,
-            label      = w.label,
-            owner      = w.owner,
-            balance    = w.balance,
-            created_at = w.created_at,
-            metadata   = w.metadata_,
+            id             = w.id,
+            label          = w.label,
+            owner          = w.owner,
+            balance        = w.balance,
+            status         = w.status,
+            allowed_models = w.allowed_models or [],
+            valid_until    = w.valid_until,
+            created_at     = w.created_at,
+            metadata       = w.metadata_,
         )
         for w in wallets
     ]
@@ -676,7 +679,7 @@ async def delete_mapping(
 
 @router.get("/usage")
 async def get_usage(
-    token_id    : Optional[str] = None,
+    wallet_id   : Optional[str] = None,
     provider    : Optional[str] = None,
     abstraction : Optional[str] = None,
     limit       : int           = Query(50, le=500),
@@ -686,7 +689,7 @@ async def get_usage(
     Query the usage / audit log with optional filters.
 
     Args:
-        token_id: Optional access token ID filter.
+        wallet_id: Optional wallet ID filter.
         provider: Optional provider name filter.
         abstraction: Optional abstraction name filter.
         limit: Maximum number of log entries to return (max 500).
@@ -696,8 +699,8 @@ async def get_usage(
         A list of usage log entries.
     """
     q = select(UsageLog).order_by(UsageLog.created_at.desc()).limit(limit)
-    if token_id:
-        q = q.where(UsageLog.access_token_id == token_id)
+    if wallet_id:
+        q = q.where(UsageLog.access_token_id == wallet_id)
     if provider:
         q = q.where(UsageLog.provider == provider)
     if abstraction:
@@ -707,7 +710,7 @@ async def get_usage(
     return [
         {
             "id"                : l.id,
-            "access_token_id"   : l.access_token_id,
+            "wallet_id"         : l.access_token_id,
             "abstraction"       : l.abstraction,
             "provider"          : l.provider,
             "model_name"        : l.model_name,
@@ -749,31 +752,3 @@ async def usage_stats(
     return {"stats": [dict(row._mapping) for row in result]}
 
 
-# ====================================================================================================
-# Helpers
-# ====================================================================================================
-
-
-def _token_to_resp(t: AccessToken) -> TokenResponse:
-    """
-    Convert an ORM AccessToken instance to a TokenResponse schema.
-
-    Args:
-        t: The AccessToken ORM instance.
-
-    Returns:
-        A TokenResponse DTO.
-    """
-    return TokenResponse(
-        id             = t.id,
-        label          = t.label,
-        owner          = t.owner,
-        budget_type    = t.budget_type.value,
-        token_budget   = t.token_budget,
-        tokens_used    = t.tokens_used,
-        valid_until    = t.valid_until,
-        refresh_period = t.refresh_period,
-        allowed_models = t.allowed_models or [],
-        status         = t.status.value,
-        created_at     = t.created_at,
-    )

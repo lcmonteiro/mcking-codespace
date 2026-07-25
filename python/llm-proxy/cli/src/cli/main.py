@@ -373,7 +373,7 @@ def wallet_add_provider(wallet_id: str, provider: str, credit: int) -> None:
         _abort(str(exc))
     click.echo(f"✓ Added provider {provider[:8]} to wallet {wallet_id[:8]}:")
     click.echo(f"  Credit transferred: {credit:,} tokens")
-    click.echo(f"  Wallet new balance: {result.get('new_balance', 0):,} tokens")
+    click.echo(f"  Wallet new balance: {result.get('wallet_balance', 0):,} tokens")
     click.echo(f"  Provider remaining: {result.get('provider_remaining', 0):,} tokens")
 
 

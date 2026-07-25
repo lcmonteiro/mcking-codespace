@@ -9,6 +9,7 @@ LangChain Runnable with typed Pydantic I/O.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -16,8 +17,9 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import AccessToken, BudgetType, RequestStatus, TokenStatus, UsageLog
+from src.db.models import ProviderKey, RequestStatus, UsageLog, Wallet
 from src.db.session import db_contex
+from src.services.credit_models import CreditModelType, CreditState
 
 logger = logging.getLogger(__name__)
 
@@ -77,28 +79,32 @@ class BudgetDeductRunnable(Runnable[BudgetDeductInput, dict]):
         async with db_contex() as db:
             total = input.prompt_tokens + input.completion_tokens
 
-            # Update access token counters
-            if input.token:
-                await db.execute(
-                    update(AccessToken)
-                    .where(AccessToken.id == input.token.id)
-                    .values(tokens_used=AccessToken.tokens_used + total)
-                )
-                # Check exhaustion threshold
-                if (
-                    input.token.budget_type != BudgetType.UNLIMITED
-                    and input.token.token_budget is not None
-                    and (input.token.tokens_used + total) >= input.token.token_budget
-                ):
-                    await db.execute(
-                        update(AccessToken)
-                        .where(AccessToken.id == input.token.id)
-                        .values(status=TokenStatus.EXHAUSTED)
+            # Deduct from provider's credit budget
+            if input.provider_key_id:
+                pk = await db.get(ProviderKey, input.provider_key_id)
+                if pk:
+                    # Build CreditState and maybe reset for monthly_reset model
+                    state = CreditState(
+                        budget_amount = pk.budget_amount or 0,
+                        budget_spent  = pk.budget_spent,
+                        last_reset_at = pk.last_reset_at,
+                        credit_model  = CreditModelType(pk.credit_model),
                     )
+
+                    # Deduct from provider budget
+                    if state.budget_available >= total:
+                        pk.budget_spent  += total
+                        pk.tokens_used   += total
+                        pk.last_used_at  = datetime.now(timezone.utc)
+                    else:
+                        logger.warning(
+                            "Insufficient provider credit: available=%d, requested=%d",
+                            state.budget_available, total,
+                        )
 
             # Immutable audit log entry
             log = UsageLog(
-                access_token_id  = getattr(input.token, "id", None) if input.token else None,
+                wallet_id        = getattr(input.token, "id", None) if input.token else None,
                 provider_key_id  = input.provider_key_id,
                 abstraction      = input.abstraction,
                 provider         = input.provider,

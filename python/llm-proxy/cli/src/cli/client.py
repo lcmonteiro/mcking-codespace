@@ -60,7 +60,7 @@ class AdminClient:
         *,
         owner_label: str = "default",
         priority: int = 0,
-        budget_type: str,
+        credit_model: str,
         budget_amount: int,
     ) -> Dict[str, Any]:
         """
@@ -82,7 +82,7 @@ class AdminClient:
             "provider": provider,
             "api_key": api_key,
             "priority": priority,
-            "budget_type": budget_type,
+            "credit_model": credit_model,
             "budget_amount": budget_amount,
         })
         r.raise_for_status()
@@ -132,7 +132,7 @@ class AdminClient:
         provider_id: str,
         *,
         budget_amount: Optional[int] = None,
-        budget_type: Optional[str] = None,
+        credit_model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Update provider budget configuration (amount or type).
@@ -145,13 +145,13 @@ class AdminClient:
         Returns:
             Updated provider metadata.
         """
-        if budget_amount is None and budget_type is None:
-            raise ValueError("Either budget_amount or budget_type must be provided")
+        if budget_amount is None and credit_model is None:
+            raise ValueError("Either budget_amount or credit_model must be provided")
         params: Dict[str, Any] = {}
         if budget_amount is not None:
             params["budget_amount"] = budget_amount
-        if budget_type is not None:
-            params["budget_type"] = budget_type
+        if credit_model is not None:
+            params["credit_model"] = credit_model
         r = self._client.patch(f"/admin/provider-keys/{provider_id}/budget", params=params)
         r.raise_for_status()
         return r.json()
