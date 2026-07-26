@@ -115,36 +115,41 @@ class CodecBridge {
     if (!dataPtr) throw new Error('_malloc failed (data)');
     mod.HEAPU8.set(data, dataPtr);
 
+    /* enc_set returns the number of frames directly */
     const count = mod._enc_set(encH, dataPtr, len, lo, hi, 64);
-    if (count < 0) {
-      mod._free(dataPtr);
-      throw new Error(`enc_set failed: ${count}`);
+    mod._free(dataPtr);
+
+    if (count <= 0) {
+      console.warn('[codec-bridge] encode failed:', mod.UTF8ToString(mod._last_error()));
+      return { frames: [], capacity: 0, dataLen: 0 };
     }
 
-    /* enc_get: retrieve frames */
-    const fs = 64;  /* Frame Size */
+    /* enc_get: retrieve frames one by one */
     const frames = [];
-    let frameBufPtr = mod._malloc(fs);
-    if (!frameBufPtr) { mod._free(dataPtr); throw new Error('_malloc failed (frameBuf)'); }
-
     let capacity = 0;
-    while (true) {
-      mod.setValue(this._lenPtr, 0, 'i32');
-      const ret = mod._enc_get(encH, frameBufPtr, this._lenPtr);
-      if (ret < 0) break;  /* no more frames */
+
+    for (let i = 0; i < count; i++) {
+      mod.setValue(this._lenPtr, 0, 'i32');  /* reset length */
+      const framePtr = mod._enc_get(encH, this._lenPtr);
       const frameLen = mod.getValue(this._lenPtr, 'i32');
-      if (frameLen === 0) break;
-      if (capacity === 0) capacity = ret;  /* first call returns capacity */
-      const frame = Buffer.from(mod.HEAPU8.slice(frameBufPtr, frameBufPtr + frameLen));
+      
+      if (framePtr === 0 || frameLen <= 0) {
+        console.warn(`[codec-bridge] enc_get returned invalid frame ${i}: ptr=${framePtr}, len=${frameLen}`);
+        break;
+      }
+      
+      if (i === 0) capacity = count;  /* first call gives us total count */
+      
+      const frame = Buffer.from(mod.HEAPU8.slice(framePtr, framePtr + frameLen));
       frames.push(frame);
     }
 
-    mod._free(frameBufPtr);
-    mod._free(dataPtr);
-
+    /* Calculate capacity as per browser version: floor((count - 3) / 2) */
+    capacity = Math.floor((count - 3) / 2);
     const dataLen = len;
+
     console.log('[codec-bridge] encode: len=', dataLen, 'capacity=', capacity,
-                'frames=', frames.length);
+                'frames=', frames.length, 'count from enc_set=', count);
 
     return { frames, capacity, dataLen };
   }
