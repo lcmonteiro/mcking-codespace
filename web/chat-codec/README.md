@@ -42,7 +42,7 @@ node cli-chat.js --help
 
 **Keys:** Enter to send, Esc/Ctrl+C to quit, PgUp/PgDn to scroll.
 
-The CLI uses a pure-JS codec and is compatible with the browser version -- same token = same room.
+The CLI uses the same WASM codec as the browser version -- same token = same room. Requires `codec_share.wasm` compiled via `wasm/build.sh`.
 
 ## Quick start (browser)
 
@@ -79,6 +79,9 @@ web/chat-codec/
 +-- cli/
 |   +-- cli-chat.js            CLI version (Node.js TUI)
 |   +-- package.json
++-- shared/
+|   +-- hash.js                hub ID + timestamp helpers
+|   +-- codec-bridge.cjs       shared codec wrapper (Node + Browser)
 +-- wasm/
 |   +-- codec-share/           git submodule (headers)
 |   +-- codec_wrapper.cpp      Emscripten wrapper

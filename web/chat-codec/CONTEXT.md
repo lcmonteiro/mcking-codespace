@@ -26,6 +26,9 @@ User types message
 | `public/app.js` | Glue between UI, codec, WebRTC |
 | `public/codec.js` | WASM bridge or JS identity fallback |
 | `public/webrtc.js` | WebRTC mesh via PeerJS |
+| `cli/cli-chat.js` | CLI version (Node.js TUI with neo-blessed) |
+| `shared/hash.js` | Hub ID derivation + timestamp helpers |
+| `shared/codec-bridge.cjs` | Shared codec wrapper (used by both CLI and browser) |
 | `wasm/codec_wrapper.cpp` | Emscripten wrapper (istream/ostream API) |
 | `wasm/codec-share/` | Git submodule — codec-share headers |
 | `wasm/build.sh` | WASM build script (requires Emscripten) |

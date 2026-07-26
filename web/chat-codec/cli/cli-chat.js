@@ -414,7 +414,7 @@ inputBox.key('enter', () => {
 
   mesh.broadcast(msgId, enc.frames, enc.capacity, enc.dataLen);
   addMessage(text, NICK, true);
-  addSystemMsg(`${frames.length} frame${frames.length > 1 ? 's' : ''} sent`);
+  addSystemMsg(`${enc.frames.length} frame${enc.frames.length > 1 ? 's' : ''} sent`);
 });
 
 screen.key(['C-c', 'q', 'escape'], () => {

@@ -60,6 +60,7 @@ class CodecBridge {
     });
 
     this.module = mod;
+    console.log('[codec-bridge] DEBUG: this.module set in init:', !!this.module);
     this._lenPtr = mod._malloc(4);  /* 4 bytes for length output */
     if (!this._lenPtr) throw new Error('_malloc failed (lenPtr)');
 
@@ -69,11 +70,6 @@ class CodecBridge {
                       '_malloc','_free','_ping'];
     for (const e of required) {
       if (typeof mod[e] !== 'function') {
-        /* Maybe the Module is nested (Emscripten Module object vs factory) */
-        if (typeof globalThis[e] === 'function') {
-          this.module = globalThis;
-          break;
-        }
         throw new Error(`WASM missing export: ${e}`);
       }
     }
@@ -135,7 +131,7 @@ class CodecBridge {
     while (true) {
       const ret = this.module._enc_get(encH, frameBufPtr, this._lenPtr);
       if (ret < 0) break;  /* no more frames */
-      const frameLen = this.module.HEAPU32[this._lenPtr >> 2];
+      const frameLen = this.module.HEAP32[this._lenPtr >> 2];
       if (frameLen === 0) break;
       if (capacity === 0) capacity = ret;  /* first call returns capacity */
       const frame = Buffer.from(this.module.HEAPU8.slice(frameBufPtr, frameBufPtr + fs));
@@ -235,7 +231,7 @@ class CodecBridge {
       return null;
     }
 
-    const outLen = this.module.HEAPU32[this._lenPtr >> 2];
+    const outLen = this.module.HEAP32[this._lenPtr >> 2];
     const dataBuf = Buffer.from(this.module.HEAPU8.slice(outPtr, outPtr + outLen));
     this.module._free(outPtr);
 
