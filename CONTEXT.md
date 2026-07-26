@@ -63,3 +63,5 @@ scripts/   — Build scripts, helpers
 - `web/particle-life/` — emergent artificial life simulation
 - `python/snake.py` — terminal Snake game (curses, arrow/WASD, pause, score, speed scaling)
 - `python/lorenz.py` — Lorenz Attractor 3D chaotic system (RK4 integration, rotating ASCII, ANSI colour, interactive controls)
+- `python/wave_interference.py` — multi-source wave superposition, 7 presets, ANSI truecolor
+- `python/ocean.py` — ocean surface simulator with animated waves, sky, celestial bodies, clouds, seabirds, 5 palettes (Sunset, Moonlit, Dawn, Storm, Tropical), wind/sea-state controls
