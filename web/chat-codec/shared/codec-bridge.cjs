@@ -74,6 +74,11 @@ class CodecBridge {
       }
     }
 
+    /* Create encoder instance (reused for all encodes) */
+    const encH = this.module._create_encoder();
+    if (encH < 0) throw new Error(`create_encoder failed: ${encH}`);
+    this._encHandle = encH;
+
     /* Ping test */
     const pong = mod._ping();
     if (pong !== 42) throw new Error(`Ping failed: got ${pong}`);
@@ -101,49 +106,41 @@ class CodecBridge {
     /* Derive seed FNV-1a 64-bit from token */
     const { lo, hi } = this._tokenParts(token);
 
-    /* Create encoder instance */
-    const encH = this.module._create_encoder();
-    if (encH < 0) throw new Error(`create_encoder failed: ${encH}`);
+    const mod = this.module;
+    const encH = this._encHandle;
+    if (encH === null) throw new Error('Encoder not initialized');
 
-    this._encHandle = encH;
-
-    /* enc_set returns (capacity, frameCount) packed? Let's call separately */
-    /* First: enc_set(handle, dataPtr, dataLen, lo, hi, FS) */
-    const dataPtr = this.module._malloc(len);
+    /* enc_set: set input data */
+    const dataPtr = mod._malloc(len);
     if (!dataPtr) throw new Error('_malloc failed (data)');
+    mod.HEAPU8.set(data, dataPtr);
 
-    /* Copy data to WASM heap */
-    this.module.HEAPU8.set(data, dataPtr);
-
-    const count = this.module._enc_set(encH, dataPtr, len, lo, hi, 64);
+    const count = mod._enc_set(encH, dataPtr, len, lo, hi, 64);
     if (count < 0) {
-      this.module._free(dataPtr);
+      mod._free(dataPtr);
       throw new Error(`enc_set failed: ${count}`);
     }
 
-    /* enc_get: allocate frame buffer (max 64KB) and retrieve frames */
+    /* enc_get: retrieve frames */
     const fs = 64;  /* Frame Size */
     const frames = [];
-    let frameBufPtr = this.module._malloc(fs);
-    if (!frameBufPtr) { this.module._free(dataPtr); throw new Error('_malloc failed (frameBuf)'); }
+    let frameBufPtr = mod._malloc(fs);
+    if (!frameBufPtr) { mod._free(dataPtr); throw new Error('_malloc failed (frameBuf)'); }
 
     let capacity = 0;
     while (true) {
-      const ret = this.module._enc_get(encH, frameBufPtr, this._lenPtr);
+      mod.setValue(this._lenPtr, 0, 'i32');
+      const ret = mod._enc_get(encH, frameBufPtr, this._lenPtr);
       if (ret < 0) break;  /* no more frames */
-      const frameLen = this.module.HEAP32[this._lenPtr >> 2];
+      const frameLen = mod.getValue(this._lenPtr, 'i32');
       if (frameLen === 0) break;
       if (capacity === 0) capacity = ret;  /* first call returns capacity */
-      const frame = Buffer.from(this.module.HEAPU8.slice(frameBufPtr, frameBufPtr + fs));
+      const frame = Buffer.from(mod.HEAPU8.slice(frameBufPtr, frameBufPtr + frameLen));
       frames.push(frame);
     }
 
-    this.module._free(frameBufPtr);
-    this.module._free(dataPtr);
-
-    /* Clean up encoder handle */
-    this.module._destroy_encoder(encH);
-    this._encHandle = null;
+    mod._free(frameBufPtr);
+    mod._free(dataPtr);
 
     const dataLen = len;
     console.log('[codec-bridge] encode: len=', dataLen, 'capacity=', capacity,
@@ -199,11 +196,11 @@ class CodecBridge {
     const status = this.module._dec_set(state.handle, ptr, frameData.length);
     this.module._free(ptr);
 
-    state.frameCount++;
-
     if (status < 0) {
       console.warn('[codec-bridge] dec_set error:', status, 'for msgId', msgId,
                    'frame', state.frameCount);
+    } else {
+      state.frameCount++;
     }
   }
 
@@ -231,7 +228,7 @@ class CodecBridge {
       return null;
     }
 
-    const outLen = this.module.HEAP32[this._lenPtr >> 2];
+    const outLen = this.module.getValue(this._lenPtr, 'i32');
     const dataBuf = Buffer.from(this.module.HEAPU8.slice(outPtr, outPtr + outLen));
     this.module._free(outPtr);
 
@@ -269,6 +266,7 @@ class CodecBridge {
   _cleanup() {
     this.reset();
     if (this._lenPtr) { try { this.module?._free(this._lenPtr); } catch(_) {} this._lenPtr = null; }
+    if (this._encHandle !== null) { try { this.module?._destroy_encoder(this._encHandle); } catch(_) {} this._encHandle = null; }
     this.module = null;
     this.ready = false;
   }
