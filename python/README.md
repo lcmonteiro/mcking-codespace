@@ -18,6 +18,7 @@
 | [`snake.py`](./snake.py) | 🐍 Terminal Snake game — arrow/WASD, pause, score, speed scaling |
 | [`lorenz.py`](./lorenz.py) | 🦋 Lorenz Attractor — 3D chaotic system, rotating ASCII, ANSI colour |
 | [`wave_interference.py`](./wave_interference.py) | 🌊 Wave Interference — multi-source superposition, 7 presets, ANSI truecolor |
+| [`fireworks.py`](./fireworks.py) | 🎆 ASCII Fireworks — particle physics, 5 types, 5 palettes, auto-show mode |
 
 ---
 

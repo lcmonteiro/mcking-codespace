@@ -65,3 +65,4 @@ scripts/   — Build scripts, helpers
 - `python/lorenz.py` — Lorenz Attractor 3D chaotic system (RK4 integration, rotating ASCII, ANSI colour, interactive controls)
 - `python/wave_interference.py` — multi-source wave superposition, 7 presets, ANSI truecolor
 - `python/ocean.py` — ocean surface simulator with animated waves, sky, celestial bodies, clouds, seabirds, 5 palettes (Sunset, Moonlit, Dawn, Storm, Tropical), wind/sea-state controls
+- `python/fireworks.py` — ASCII fireworks display with particle physics, 5 types (Burst, Fountain, Comet, Crossette, Willow), 5 palettes, auto-show mode, trails, sparkle effects
