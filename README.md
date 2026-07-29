@@ -49,6 +49,7 @@ Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https:/
 | 📊 **Diagrams** | [`/diagrams/`](https://lcmonteiro.github.io/mcking-codespace/diagrams/) | Diagramas e whiteboards (SVG) |
 | λ **λ-tree** | _(terminal-only)_ | Lambda calculus visualiser — β-reduction, ASCII trees, Church numerals |
 | 🏠 **Landing** | [`/`](https://lcmonteiro.github.io/mcking-codespace/) | Página inicial com links para todos os projetos |
+| 🏰 **Raycaster** | _(terminal-only)_ | Wolfenstein 3D-style raycasting engine — DDA, coloured walls, minimap, WASD controls |
 
 O deploy corre automaticamente em cada push para `master` (`.github/workflows/pages.yml`).
 

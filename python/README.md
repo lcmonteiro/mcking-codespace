@@ -20,6 +20,7 @@
 | [`wave_interference.py`](./wave_interference.py) | 🌊 Wave Interference — multi-source superposition, 7 presets, ANSI truecolor |
 | [`fireworks.py`](./fireworks.py) | 🎆 ASCII Fireworks — particle physics, 5 types, 5 palettes, auto-show mode |
 | [`solar_system.py`](./solar_system.py) | 🌌 Solar System Simulator — Keplerian orbits, asteroid belt, 3 palettes, interactive zoom/pan |
+| [`raycaster.py`](./raycaster.py) | 🏰 Terminal raycaster — Wolfenstein 3D-style engine, DDA raycasting, coloured walls, minimap, WASD controls |
 
 ---
 

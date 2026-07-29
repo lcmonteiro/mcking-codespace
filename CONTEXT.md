@@ -67,3 +67,4 @@ scripts/   — Build scripts, helpers
 - `python/ocean.py` — ocean surface simulator with animated waves, sky, celestial bodies, clouds, seabirds, 5 palettes (Sunset, Moonlit, Dawn, Storm, Tropical), wind/sea-state controls
 - `python/fireworks.py` — ASCII fireworks display with particle physics, 5 types (Burst, Fountain, Comet, Crossette, Willow), 5 palettes, auto-show mode, trails, sparkle effects
 - `python/solar_system.py` — terminal solar system simulator with Keplerian orbits, planet trails, asteroid belt, 3 palettes (Realistic, Neon, Retro), zoom/pan, speed control, info panel
+- `python/raycaster.py` — terminal raycasting engine (Wolfenstein 3D-style): DDA raycasting, coloured/textured walls, minimap, WASD + arrow controls, smooth turning, auto-rotate
