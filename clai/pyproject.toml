@@ -1,0 +1,20 @@
+[project]
+name = "clai"
+version = "0.1.0"
+description = "CLI AI — Code development agent powered by LangGraph Deep Agents"
+requires-python = ">=3.11"
+dependencies = [
+    "deepagents>=0.5.0",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+clai = "clai.cli:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

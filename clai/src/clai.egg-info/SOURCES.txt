@@ -1,0 +1,14 @@
+README.md
+pyproject.toml
+src/clai/__init__.py
+src/clai/agent.py
+src/clai/cli.py
+src/clai/config.py
+src/clai/models.py
+src/clai/tools.py
+src/clai.egg-info/PKG-INFO
+src/clai.egg-info/SOURCES.txt
+src/clai.egg-info/dependency_links.txt
+src/clai.egg-info/entry_points.txt
+src/clai.egg-info/requires.txt
+src/clai.egg-info/top_level.txt

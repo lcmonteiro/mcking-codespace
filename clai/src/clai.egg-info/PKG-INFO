@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: clai
+Version: 0.1.0
+Summary: CLI AI — Code development agent powered by LangGraph Deep Agents
+Requires-Python: >=3.11
+Requires-Dist: deepagents>=0.5.0
+Requires-Dist: click>=8.0
+Requires-Dist: rich>=13.0

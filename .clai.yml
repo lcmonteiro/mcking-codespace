@@ -1,0 +1,75 @@
+# .clai.yml - Example configuration for clai agent
+# Place this file in your project root to customize agent behavior
+
+# Model provider (overrides CLI --model flag)
+# Supported formats: anthropic:<model>, openai:<model>, ollama:<model>,
+#                    google_genai:<model>, openrouter:<model>, deepseek:<model>,
+#                    mistralai:<model>, groq:<model>
+# model: "openai:gpt-5.5"
+# model: "ollama:qwen2.5-coder"
+
+permissions:
+  # Paths the agent is allowed to access (relative to project root)
+  # "." means the entire project directory
+  allow_paths:
+    - "."
+    
+  # Paths that are denied access (filesystem tools will block these)
+  deny_paths:
+    - ".git/"           # Git internals
+    - ".venv/"          # Virtual environments
+    - "venv/"           # Alternative venv location
+    - "node_modules/"   # Node.js dependencies
+    - "__pycache__/"    # Python cache
+    - ".env"            # Environment files
+    - ".env.*"          # All env files
+    - "secrets/"        # Custom secrets directory
+    - "*.key"           # Key files
+    - "*.pem"           # PEM files
+  
+  # Maximum file size (in KB) that the agent will read in full
+  # Larger files should be accessed via grep/execute with head/tail
+  max_file_size_kb: 256
+
+commands:
+  # Additional project-specific denied commands
+  # (the base safety baseline is always applied automatically)
+  deny_prefixes:
+    - "> /dev/sda"       # Project-specific: block writes to raw devices
+  
+  # To restrict to an allowlist instead, uncomment and list allowed prefixes:
+  # allow_prefixes:
+  #   - "ls"
+  #   - "git "
+  #   - "python"
+  #   - "pip"
+  #   - "pytest"
+
+tools:
+  # List of tool names to exclude from the agent
+  # Available tools: run_command, git_status, git_diff, git_log, list_directory, py_compile_check
+  exclude: []
+  
+  # Example: disable git tools if you don't want the agent to touch git
+  # exclude: ["git_status", "git_diff", "git_log"]
+
+# Additional text to append to the system prompt
+system_prompt_additions: |
+  ## Project-specific guidelines
+  
+  This is a Python web application using FastAPI.
+  
+  Coding standards:
+  - Use type hints for all function signatures
+  - Follow PEP 8 formatting (we use ruff for linting)
+  - All API endpoints must have corresponding tests
+  - Database operations must use async SQLAlchemy
+  
+  Common patterns:
+  - Service layer in `app/services/`
+  - API routers in `app/api/`
+  - Models in `app/models/`
+  - Utils in `app/utils/`
+
+# Maximum number of agent turns in interactive mode (can be overridden by --max-turns)
+max_turns: 75
