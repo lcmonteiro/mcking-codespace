@@ -46,6 +46,21 @@ Cada projeto deve ter dois scripts na sua raiz:
 
 O `run.sh` da raiz (`./run.sh`) já delega para `run.sh` dentro de pastas projeto.
 
+Todos os projetos têm `setup.sh` e `run.sh`:
+
+| Project | setup.sh | run.sh |
+|---|---|---|
+| `cpp/` | Compila C++ | Compila + corre o binário |
+| `python/clai/` | `uv venv` + `uv sync` | Corre `clai` CLI |
+| `python/llm-proxy/` | `uv venv` + `uv pip install` | Corre uvicorn (`main:app`) |
+| `web/` | Overview de sub-projetos | Lista sub-projetos |
+| `web/cellular-automata/` | Noop (static) | Abre index.html no browser |
+| `web/chat-codec/` | `npm install` + submodule | `npm run dev` |
+| `web/diagrams/` | Noop (static) | Lista SVGs |
+| `web/fluid-sim/` | Noop (static) | Abre index.html no browser |
+| `web/particle-life/` | Noop (static) | Abre index.html no browser |
+| `web/thunderstorm/` | Noop (static) | Abre index.html no browser |
+
 ### Exemplo de setup.sh para Python
 
 ```bash
