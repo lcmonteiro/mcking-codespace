@@ -1,4 +1,38 @@
-# Python Code Formatting Rules
+# Python Context
+
+## Environment & Dependencies
+
+Usa **uv** para tudo que seja virtual environment e dependências:
+
+- **Projetos com `pyproject.toml`**:
+  ```bash
+  uv venv           # criar .venv (se não existir)
+  uv sync           # instalar/atualizar dependências
+  ```
+
+- **Projetos com `requirements.txt`** (sem pyproject.toml):
+  ```bash
+  uv venv
+  uv pip install -r requirements.txt
+  ```
+
+- **Scripts avulsos** (single file, sem venv): correr diretamente com `uv run`:
+  ```bash
+  uv run python/script.py
+  ```
+  O `uv run` usa o interpretador do sistema sem precisar de `.venv`.
+
+- **Adicionar dependências**:
+  ```bash
+  uv add <package>        # com pyproject.toml
+  uv pip install <pkg>    # sem pyproject, só requirements.txt
+  ```
+
+Não usar `pip install` diretamente, não usar `venv` do Python padrão. Para tudo o que for Python, usa-se `uv`.
+
+---
+
+## Code Formatting Rules
 
 Rules to apply when writing or reformatting any Python file.
 Based on PEP 8, PEP 484 (type hints), and Google-style docstrings.

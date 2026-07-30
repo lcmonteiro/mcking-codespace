@@ -32,6 +32,71 @@ scripts/   — Build scripts, helpers
 ## Build Helper
 
 - `scripts/build.sh` — build helper that auto-detects GCC/Clang/MSVC on Linux/WSL2
+
+## Root Scripts Convention
+
+Cada projeto deve ter dois scripts na sua raiz:
+
+- **`run.sh`** — corre o projeto (compila, executa, abre browser, etc.)
+- **`setup.sh`** — prepara o ambiente pela primeira vez:
+  - Instala dependências (pip, npm, etc.)
+  - Cria virtualenv / `.venv` se necessário
+  - Corre `uv sync`, `npm install`, ou equivalente
+  - Deve ser idempotente (pode correr多次 sem partir nada)
+
+O `run.sh` da raiz (`./run.sh`) já delega para `run.sh` dentro de pastas projeto.
+
+### Exemplo de setup.sh para Python
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -d .venv ]; then
+    uv venv
+fi
+uv sync
+```
+
+### Exemplo para Node
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -d node_modules ]; then
+    npm install
+fi
+```
+
+### Exemplo para Python single-script (sem pyproject.toml)
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -d .venv ]; then
+    python3 -m venv .venv
+    .venv/bin/pip install -r requirements.txt
+fi
+```
+
+### Projects with setup.sh
+
+Todos os projetos do repo já têm `setup.sh`:
+
+| Project | Type | setup.sh faz |
+|---|---|---|
+| `cpp/` | C++ | Verifica g++/clang++, compila .cpp |
+| `python/clai/` | Python (uv) | `uv venv` + `uv sync` |
+| `python/llm-proxy/` | Python (pip) | `venv` + `pip install -r requirements.txt` |
+| `web/` | Root | Overview de sub-projetos |
+| `web/chat-codec/` | Node + WASM | `npm install` + git submodule + check Emscripten |
+| `web/cellular-automata/` | Static HTML | Noop (basta abrir index.html) |
+| `web/diagrams/` | Static SVG | Noop |
+| `web/fluid-sim/` | Static HTML | Noop (basta abrir index.html) |
+| `web/particle-life/` | Static HTML | Noop (basta abrir index.html) |
+| `web/thunderstorm/` | Static HTML | Noop (basta abrir index.html) |
 ## Windows Python Gotchas
 
 - **UTF-8 stdout**: `sys.stdout.reconfigure(encoding='utf-8', errors='replace')` — required for Unicode in Windows terminals
