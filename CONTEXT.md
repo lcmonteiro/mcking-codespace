@@ -33,6 +33,10 @@ scripts/   — Build scripts, helpers
 
 - `scripts/build.sh` — build helper that auto-detects GCC/Clang/MSVC on Linux/WSL2
 
+## Recent Sessions
+
+- **2026-07-31** — `python/metaballs.py`: classic demoscene metaballs (Blinn blobs, half-block `▀` rendering, phosphor trails, field-lines mode, 5 palettes). Fixed `termios.error` crash in `_read_key` when stdin is not a TTY (also applied to `plasma.py`).
+
 ## Root Scripts Convention
 
 Cada projeto deve ter dois scripts na sua raiz:
@@ -148,3 +152,4 @@ Todos os projetos do repo já têm `setup.sh`:
 - `python/fireworks.py` — ASCII fireworks display with particle physics, 5 types (Burst, Fountain, Comet, Crossette, Willow), 5 palettes, auto-show mode, trails, sparkle effects
 - `python/solar_system.py` — terminal solar system simulator with Keplerian orbits, planet trails, asteroid belt, 3 palettes (Realistic, Neon, Retro), zoom/pan, speed control, info panel
 - `python/raycaster.py` — terminal raycasting engine (Wolfenstein 3D-style): DDA raycasting, coloured/textured walls, minimap, WASD + arrow controls, smooth turning, auto-rotate
+- `python/metaballs.py` — classic demoscene metaballs: Blinn blobs (r²/d² field), half-block `▀` rendering with 2× vertical resolution, phosphor trails, field-lines mode, 5 palettes, interactive controls

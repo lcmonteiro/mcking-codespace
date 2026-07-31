@@ -256,19 +256,22 @@ class Plasma:
                 import tty
                 fd = sys.stdin.fileno()
                 if select.select([fd], [], [], 0.0)[0]:
-                    old = termios.tcgetattr(fd)
                     try:
-                        tty.setraw(fd)
-                        ch = sys.stdin.read(1)
-                        if ch == '\x1b':
-                            # Possibly escape sequence
-                            rest = sys.stdin.read(2) if select.select([fd], [], [], 0.005)[0] else ''
-                            if rest:
-                                return None  # arrow/escape sequence
-                            return 'q'  # ESC key = quit
-                        return ch
-                    finally:
-                        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                        old = termios.tcgetattr(fd)
+                        try:
+                            tty.setraw(fd)
+                            ch = sys.stdin.read(1)
+                            if ch == '\x1b':
+                                # Possibly escape sequence
+                                rest = sys.stdin.read(2) if select.select([fd], [], [], 0.005)[0] else ''
+                                if rest:
+                                    return None  # arrow/escape sequence
+                                return 'q'  # ESC key = quit
+                            return ch
+                        finally:
+                            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+                    except termios.error:
+                        return None  # not a TTY
             return None
         except (ImportError, AttributeError, OSError):
             return None

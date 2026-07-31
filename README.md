@@ -50,6 +50,7 @@ Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https:/
 | λ **λ-tree** | _(terminal-only)_ | Lambda calculus visualiser — β-reduction, ASCII trees, Church numerals |
 | 🏠 **Landing** | [`/`](https://lcmonteiro.github.io/mcking-codespace/) | Página inicial com links para todos os projetos |
 | 🏰 **Raycaster** | _(terminal-only)_ | Wolfenstein 3D-style raycasting engine — DDA, coloured walls, minimap, WASD controls |
+| 🧫 **Metaballs** | _(terminal-only)_ | Classic demoscene metaballs — Blinn blobs, half-block rendering, phosphor trails, field-lines mode |
 
 O deploy corre automaticamente em cada push para `master` (`.github/workflows/pages.yml`).
 
