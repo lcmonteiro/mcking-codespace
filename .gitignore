@@ -10,7 +10,8 @@
 *.dylib
 build/
 cmake-build-*/
-/cpp/gpt        # extensionless binary build output
+# extensionless binary build output
+/cpp/gpt
 __pycache__/
 *.pyc
 *.pyo

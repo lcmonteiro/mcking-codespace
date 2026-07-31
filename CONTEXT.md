@@ -35,6 +35,7 @@ scripts/   — Build scripts, helpers
 
 ## Recent Sessions
 
+- **2026-07-31** — `python/tunnel.py`: classic demoscene texture-mapped tunnel (polar mapping angle→u / 1/d→v, 5 procedural textures incl. stars, distance fog, warp wobble, arrow-key steering, 5 palettes). Fixed a gitignore bug: inline `#` comments aren't stripped, so `/cpp/gpt        # comment` never matched — moved the comment to its own line.
 - **2026-07-31** — `python/metaballs.py`: classic demoscene metaballs (Blinn blobs, half-block `▀` rendering, phosphor trails, field-lines mode, 5 palettes). Fixed `termios.error` crash in `_read_key` when stdin is not a TTY (also applied to `plasma.py`).
 
 ## Root Scripts Convention
@@ -153,3 +154,4 @@ Todos os projetos do repo já têm `setup.sh`:
 - `python/solar_system.py` — terminal solar system simulator with Keplerian orbits, planet trails, asteroid belt, 3 palettes (Realistic, Neon, Retro), zoom/pan, speed control, info panel
 - `python/raycaster.py` — terminal raycasting engine (Wolfenstein 3D-style): DDA raycasting, coloured/textured walls, minimap, WASD + arrow controls, smooth turning, auto-rotate
 - `python/metaballs.py` — classic demoscene metaballs: Blinn blobs (r²/d² field), half-block `▀` rendering with 2× vertical resolution, phosphor trails, field-lines mode, 5 palettes, interactive controls
+- `python/tunnel.py` — classic demoscene texture-mapped tunnel: polar mapping (angle→u, 1/distance→v), 5 procedural textures (checker, rings, stripes, noise, stars), distance fog, warp wobble, arrow-key steering, 5 palettes, interactive controls

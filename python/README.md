@@ -22,6 +22,7 @@
 | [`solar_system.py`](./solar_system.py) | 🌌 Solar System Simulator — Keplerian orbits, asteroid belt, 3 palettes, interactive zoom/pan |
 | [`raycaster.py`](./raycaster.py) | 🏰 Terminal raycaster — Wolfenstein 3D-style engine, DDA raycasting, coloured walls, minimap, WASD controls |
 | [`metaballs.py`](./metaballs.py) | 🧫 Classic demoscene metaballs — Blinn blobs, half-block rendering, phosphor trails, field-lines mode, 5 palettes |
+| [`tunnel.py`](./tunnel.py) | 🌀 Classic demoscene texture-mapped tunnel — 5 procedural textures, distance fog, warp wobble, arrow-key steering, 5 palettes |
 
 ---
 
