@@ -2,6 +2,9 @@
 # run.sh — Build and run C++ project
 set -euo pipefail
 
+# Location-independent: run from this script's own directory
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Build if needed
 if [ ! -f setup.sh ] || bash setup.sh; then
     :

@@ -35,6 +35,7 @@ scripts/   — Build scripts, helpers
 
 ## Recent Sessions
 
+- **2026-08-01** — `python/donut.py`: classic demoscene rotating 3D torus (the famous one-liner, grown up). Solid meshes torus/sphere/cube, per-vertex Lambert shading with ambient floor, z-buffer occlusion, half-block ▀ truecolor rendering, wireframe & ASCII-ramp modes, 5 palettes, spin-speed control, organic wobble, `--once` ASCII frame dump for demos/tests.
 - **2026-07-31** — `python/tunnel.py`: classic demoscene texture-mapped tunnel (polar mapping angle→u / 1/d→v, 5 procedural textures incl. stars, distance fog, warp wobble, arrow-key steering, 5 palettes). Fixed a gitignore bug: inline `#` comments aren't stripped, so `/cpp/gpt        # comment` never matched — moved the comment to its own line.
 - **2026-07-31** — `python/metaballs.py`: classic demoscene metaballs (Blinn blobs, half-block `▀` rendering, phosphor trails, field-lines mode, 5 palettes). Fixed `termios.error` crash in `_read_key` when stdin is not a TTY (also applied to `plasma.py`).
 

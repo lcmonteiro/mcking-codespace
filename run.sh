@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+# Location-independent: run from the repo root regardless of cwd
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 die() { echo "❌ $1"; exit 1; }
 need() { command -v "$1" &>/dev/null || die "$1 not found — install it first"; }
 

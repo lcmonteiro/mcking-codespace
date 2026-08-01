@@ -3,6 +3,9 @@
 # Checks compiler availability and compiles the project.
 set -euo pipefail
 
+# Location-independent: run from this script's own directory
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🔧 C++ setup — checking compiler..."
 
 if command -v g++ &>/dev/null; then

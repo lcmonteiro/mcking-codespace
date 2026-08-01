@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# Location-independent: run from the repo root regardless of cwd
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 die() { echo "❌ $1"; exit 1; }
 
 # ── If an argument is given, delegate to that project's setup.sh ────
