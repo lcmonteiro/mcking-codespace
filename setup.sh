@@ -60,6 +60,7 @@ setup_dir() {
 setup_dir "cpp"          "C++"
 setup_dir "python/clai"  "Python Clai"
 setup_dir "python/llm-proxy" "Python LLM Proxy"
+setup_dir "python/chatlib" "Python ChatLib"
 setup_dir "web/chat-codec" "Web Chat Codec"
 setup_dir "web"          "Web static projects"
 
