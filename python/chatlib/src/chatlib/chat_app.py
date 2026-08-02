@@ -16,7 +16,8 @@ from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, ScrollableContainer
+from textual.containers import Container, ScrollableContainer, Horizontal, Vertical
+from textual.widget import Widget
 from textual.widgets import Input, Markdown, Static
 
 logger = logging.getLogger(__name__)
@@ -52,11 +53,45 @@ class ChatApp(App):
         height: 1fr;
         overflow-y: auto;
         padding: 1 2;
-        border: round $primary;
     }
     #input-line {
         height: 3;
         dock: bottom;
+    }
+    .message-container {
+        layout: horizontal;
+        width: 100%;
+        padding: 1 0;
+    }
+    .message-container.sent {
+        align: right end;
+    }
+    .message-container.received {
+        align: left start;
+    }
+    .message-bubble {
+        layout: vertical;
+        max-width: 60%;
+        padding: 1 2;
+        border: round $primary;
+        background: $surface;
+        color: $text;
+    }
+    .message-container.sent .message-bubble {
+        background: $accent;
+        color: $text;
+    }
+    .message-container.received .message-bubble {
+        background: $primary-darken-2;
+        color: $text;
+    }
+    .message-header {
+        color: $text-muted;
+        text-style: italic;
+        margin: 0;
+    }
+    .message-body {
+        margin: 0;
     }
     """
 
@@ -179,18 +214,31 @@ class ChatApp(App):
             chat_log.mount(self._render_message(msg))
         self._rendered = len(self.messages)
 
-    def _render_message(self, msg: ChatMessage) -> Static:
-        """Renderiza uma mensagem como cabeçalho + markdown."""
+    def _render_message(self, msg: ChatMessage) -> Widget:
+        """Render a message as a container with header and body."""
         sender = "You" if msg.is_sent_by_me else "Other"
         time_str = msg.timestamp.strftime("%H:%M")
         prefix = f"[{time_str}] {sender}"
         if msg.is_command:
-            return Static(f"{prefix} [b]/[/b]{msg.text}", classes="command")
+            # For commands, we can still show them specially if needed
+            # But for now, treat as regular message with command text
+            pass
         if msg.reply_to is not None:
             prefix += f" ↳ resposta a #{msg.reply_to}"
-        header = Static(prefix, classes="header")
-        body = Markdown(msg.text)
-        return Static(f"{header.render()}\n{body.render()}")
+        
+        header = Static(prefix, classes="message-header")
+        body = Markdown(msg.text, classes="message-body")
+        
+        bubble = Vertical(header, body, classes="message-bubble")
+        
+        # Container to align left or right
+        container = Horizontal(bubble, classes="message-container")
+        if msg.is_sent_by_me:
+            container.add_class("sent")
+        else:
+            container.add_class("received")
+        
+        return container
 
     def _scroll_to_bottom(self) -> None:
         """Scrolls the chat log to the bottom."""
