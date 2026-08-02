@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Container, ScrollableContainer, Horizontal, Vertical
 from textual.widget import Widget
@@ -23,6 +24,24 @@ from textual.widgets import Input, Markdown, Static
 logger = logging.getLogger(__name__)
 
 COMMAND_PREFIX : str = "/"
+
+
+class _MessageContainer(Horizontal):
+    """Container de mensagem clicável — seleciona a msg como alvo de reply."""
+
+    def __init__(
+        self,
+        *children: Widget,
+        msg_id: str,
+        on_select: Callable[[str], None],
+        **kwargs,
+    ) -> None:
+        super().__init__(*children, **kwargs)
+        self.msg_id = msg_id
+        self._on_select = on_select
+
+    def on_click(self, event: events.Click) -> None:
+        self._on_select(self.msg_id)
 
 
 @dataclass
@@ -62,6 +81,10 @@ class ChatApp(App):
         layout: horizontal;
         width: 100%;
         padding: 1 0;
+        cursor: pointer;
+    }
+    .message-container.reply-target .message-bubble {
+        border: thick $accent;
     }
     .message-container.sent {
         align: right top;
@@ -110,6 +133,10 @@ class ChatApp(App):
         self._rendered : int = 0
         # Mapping from message id to list of reply ids (for threading)
         self._replies  : Dict[str, List[str]] = {}
+        # Mensagem selecionada como alvo de resposta (via clique)
+        self._reply_target : Optional[str] = None
+        self._msg_widgets  : Dict[str, Widget] = {}
+        self._input_placeholder = "Type a message or /command"
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -133,7 +160,11 @@ class ChatApp(App):
         if text.startswith(COMMAND_PREFIX):
             self.send_command(text[1:].strip())
         else:
-            self.send_message(text)
+            if self._reply_target is not None:
+                self.send_message(text, reply_to=self._reply_target)
+                self._clear_reply_target()
+            else:
+                self.send_message(text)
 
     # === Public API =================================================================
 
@@ -231,7 +262,7 @@ class ChatApp(App):
         self._rendered = len(self.messages)
 
     def _render_message(self, msg: ChatMessage) -> Widget:
-        """Render a message as a container with header and body."""
+        """Render a message as a clickable container with header and body."""
         sender = "You" if msg.is_sent_by_me else "Other"
         time_str = msg.timestamp.strftime("%H:%M")
         prefix = f"[{time_str}] {sender} · {msg.id}"
@@ -254,14 +285,60 @@ class ChatApp(App):
 
         bubble = Vertical(*parts, classes="message-bubble")
 
-        # Container to align left or right
-        container = Horizontal(bubble, classes="message-container")
+        # Container clicável — alinha à esquerda/direita e seleciona reply target
+        container = _MessageContainer(
+            bubble,
+            msg_id=msg.id,
+            on_select=self._on_message_clicked,
+            classes="message-container",
+        )
         if msg.is_sent_by_me:
             container.add_class("sent")
         else:
             container.add_class("received")
 
+        self._msg_widgets[msg.id] = container
         return container
+
+    # === Reply target (clique) ======================================================
+
+    def _on_message_clicked(self, msg_id: str) -> None:
+        """Seleciona/desseleciona uma mensagem como alvo de resposta."""
+        if self._reply_target == msg_id:
+            self._clear_reply_target()
+        else:
+            self._set_reply_target(msg_id)
+
+    def _set_reply_target(self, msg_id: str) -> None:
+        """Marca *msg_id* como alvo de resposta e atualiza o input."""
+        self._reply_target = msg_id
+        self._refresh_reply_target_ui()
+        inp = self.query_one("#input-line", Input)
+        inp.placeholder = f"Responder a {msg_id}…"
+
+    def _clear_reply_target(self) -> None:
+        """Limpa o alvo de resposta e restaura o input."""
+        self._reply_target = None
+        self._refresh_reply_target_ui()
+        inp = self.query_one("#input-line", Input)
+        inp.placeholder = self._input_placeholder
+
+    def _refresh_reply_target_ui(self) -> None:
+        """Atualiza o realce visual de todas as mensagens."""
+        for msg_id, widget in self._msg_widgets.items():
+            widget.set_class(msg_id == self._reply_target, "reply-target")
+
+    def send_pending_reply(self, text: str) -> Optional[str]:
+        """Envia *text* como resposta à mensagem selecionada (se houver).
+
+        Limpa a seleção. Devolve o id da mensagem enviada, ou None se não
+        houver alvo selecionado.
+        """
+        if self._reply_target is None:
+            return None
+        target = self._reply_target
+        self._clear_reply_target()
+        return self.send_message(text, reply_to=target)
 
     def _find_message(self, msg_id: str) -> Optional[ChatMessage]:
         """Devolve a mensagem com o id dado, ou None."""
