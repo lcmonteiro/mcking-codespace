@@ -96,7 +96,12 @@ case "$ext" in
   py )
     need python3
     echo "🐍 $base"
-    python3 "$file"
+    # Usa o .venv do projeto se existir (dir do script + setup.sh cria .venv)
+    local_venv="$(dirname "$file")/.venv/bin/python"
+    if [ -x "$local_venv" ]; then
+      exec "$local_venv" "$file" "${@:2}"
+    fi
+    python3 "$file" "${@:2}"
     ;;
 
   # ── JavaScript ───────────────────────────────────────
