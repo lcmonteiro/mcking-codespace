@@ -28,15 +28,26 @@ find_uv() {
 
 UV="$(find_uv || true)"
 
+# Detetar Termux/Android: o installer oficial do uv não suporta aarch64-linux-android.
+is_termux() {
+    [ -n "${PREFIX:-}" ] && [ -x "$PREFIX/bin/pkg" ]
+}
+
 # Se não existe uv, instala automaticamente.
 if [ -z "$UV" ]; then
     echo "⬇️  uv not found — installing automatically..."
-    if command -v curl &>/dev/null; then
+    if is_termux; then
+        echo "   (Termux detetado — a instalar via pkg)"
+        pkg install -y uv
+    elif command -v curl &>/dev/null; then
         curl -LsSf https://astral.sh/uv/install.sh | sh
     elif command -v wget &>/dev/null; then
         wget -qO- https://astral.sh/uv/install.sh | sh
+    elif command -v pip3 &>/dev/null; then
+        echo "   (sem curl/wget — fallback para pip3)"
+        pip3 install --user uv
     else
-        echo "❌ curl/wget not available — install uv manually: https://docs.astral.sh/uv/"
+        echo "❌ Sem curl/wget/pip — instala uv manualmente: https://docs.astral.sh/uv/"
         echo "   (Termux: pkg install uv)"
         exit 1
     fi
