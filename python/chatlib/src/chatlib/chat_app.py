@@ -26,6 +26,37 @@ logger = logging.getLogger(__name__)
 COMMAND_PREFIX : str = "/"
 
 
+class TouchScrollableContainer(ScrollableContainer):
+    """Scrollable container that supports mouse/touch drag scrolling."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._drag_start_y: int = 0
+        self._scroll_start_y: int = 0
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Record the start position when drag begins."""
+        self._drag_start_y = event.y
+        self._scroll_start_y = self.scroll_offset.y
+        event.stop()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        """Handle drag to scroll vertically."""
+        if not event.button:
+            return
+        delta_y = event.y - self._drag_start_y
+        target_y = self._scroll_start_y - delta_y
+        max_y = self.max_scroll_y
+        if max_y > 0:
+            target_y = max(0, min(target_y, max_y))
+            self.scroll_to(y=target_y, animate=False)
+        event.stop()
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        """Handle drag end."""
+        event.stop()
+
+
 class _MessageContainer(Horizontal):
     """Container de mensagem clicável — seleciona a msg como alvo de reply."""
 
@@ -152,7 +183,7 @@ class ChatApp(App):
     def compose(self) -> ComposeResult:
         """Create child widgets."""
         yield Container(
-            ScrollableContainer(id="chat-log"),
+            TouchScrollableContainer(id="chat-log"),
             Input(placeholder="Type a message or /command", id="input-line"),
         )
 
