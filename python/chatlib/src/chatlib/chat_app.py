@@ -64,10 +64,10 @@ class ChatApp(App):
         padding: 1 0;
     }
     .message-container.sent {
-        align: right end;
+        align: right top;
     }
     .message-container.received {
-        align: left start;
+        align: left top;
     }
     .message-bubble {
         layout: vertical;
