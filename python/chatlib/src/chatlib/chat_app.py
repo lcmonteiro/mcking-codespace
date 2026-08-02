@@ -81,7 +81,6 @@ class ChatApp(App):
         layout: horizontal;
         width: 100%;
         padding: 1 0;
-        cursor: pointer;
     }
     .message-container.reply-target .message-bubble {
         border: thick $accent;
