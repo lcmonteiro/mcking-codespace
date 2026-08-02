@@ -35,6 +35,8 @@ scripts/   — Build scripts, helpers
 
 ## Recent Sessions
 
+- **2026-08-02** — `python/fire.py`: classic demoscene fire (Doom-style heat-diffusion grid: each cell averages the 4 cells below it × cooling factor; bottom rows re-seeded with random fuel). Half-block ▀ truecolor rendering, smoothed wind (←/→ arrows), fuel control (+/-), ember sparks, random flare bursts, 5 palettes (Fire/Inferno/Toxic/Neon/Ice), auto-cycle, `--once` ASCII frame dump for demos/tests. Wind now clamped to ±3.0 everywhere (key + CLI).
+
 - **2026-08-01** — `python/donut.py`: classic demoscene rotating 3D torus (the famous one-liner, grown up). Solid meshes torus/sphere/cube, per-vertex Lambert shading with ambient floor, z-buffer occlusion, half-block ▀ truecolor rendering, wireframe & ASCII-ramp modes, 5 palettes, spin-speed control, organic wobble, `--once` ASCII frame dump for demos/tests.
 - **2026-07-31** — `python/tunnel.py`: classic demoscene texture-mapped tunnel (polar mapping angle→u / 1/d→v, 5 procedural textures incl. stars, distance fog, warp wobble, arrow-key steering, 5 palettes). Fixed a gitignore bug: inline `#` comments aren't stripped, so `/cpp/gpt        # comment` never matched — moved the comment to its own line.
 - **2026-07-31** — `python/metaballs.py`: classic demoscene metaballs (Blinn blobs, half-block `▀` rendering, phosphor trails, field-lines mode, 5 palettes). Fixed `termios.error` crash in `_read_key` when stdin is not a TTY (also applied to `plasma.py`).
@@ -156,3 +158,4 @@ Todos os projetos do repo já têm `setup.sh`:
 - `python/raycaster.py` — terminal raycasting engine (Wolfenstein 3D-style): DDA raycasting, coloured/textured walls, minimap, WASD + arrow controls, smooth turning, auto-rotate
 - `python/metaballs.py` — classic demoscene metaballs: Blinn blobs (r²/d² field), half-block `▀` rendering with 2× vertical resolution, phosphor trails, field-lines mode, 5 palettes, interactive controls
 - `python/tunnel.py` — classic demoscene texture-mapped tunnel: polar mapping (angle→u, 1/distance→v), 5 procedural textures (checker, rings, stripes, noise, stars), distance fog, warp wobble, arrow-key steering, 5 palettes, interactive controls
+- `python/fire.py` — classic demoscene fire: Doom-style heat-diffusion (avg of 4 cells below × cooling), half-block ▀ rendering, wind/fuel controls, ember sparks, flare bursts, 5 palettes, interactive controls

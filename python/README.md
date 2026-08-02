@@ -24,6 +24,7 @@
 | [`metaballs.py`](./metaballs.py) | 🧫 Classic demoscene metaballs — Blinn blobs, half-block rendering, phosphor trails, field-lines mode, 5 palettes |
 | [`tunnel.py`](./tunnel.py) | 🌀 Classic demoscene texture-mapped tunnel — 5 procedural textures, distance fog, warp wobble, arrow-key steering, 5 palettes |
 | [`donut.py`](./donut.py) | 🍩 Classic demoscene rotating 3D torus — Lambert shading, z-buffer, torus/sphere/cube, wireframe & ramp modes, 5 palettes |
+| [`fire.py`](./fire.py) | 🔥 Classic demoscene fire — Doom-style heat-diffusion flames, wind/fuel controls, ember sparks, flare bursts, 5 palettes |
 
 ---
 
