@@ -93,6 +93,13 @@ class ChatApp(App):
     .message-body {
         margin: 0;
     }
+    .message-quote {
+        color: $text-muted;
+        background: $panel;
+        border-left: thick $primary;
+        padding: 0 1;
+        margin: 0 0 1 0;
+    }
     """
 
     def __init__(self, on_command: Optional[Callable[[str], None]] = None) -> None:
@@ -130,16 +137,25 @@ class ChatApp(App):
 
     # === Public API =================================================================
 
-    def send_message(self, text: str) -> str:
-        """Envia uma mensagem normal e devolve o seu id."""
-        return self._add_message(
+    def send_message(self, text: str, *, reply_to: Optional[str] = None) -> str:
+        """Envia uma mensagem normal e devolve o seu id.
+
+        Args:
+        text : Conteúdo da mensagem.
+        reply_to : Id da mensagem a que esta responde (opcional).
+        """
+        msg_id = self._add_message(
             ChatMessage(
                 id=self._new_id(),
                 text=text,
                 is_command=False,
                 is_sent_by_me=True,
+                reply_to=reply_to,
             )
         )
+        if reply_to is not None:
+            self._replies.setdefault(reply_to, []).append(msg_id)
+        return msg_id
 
     def send_command(self, command: str) -> str:
         """Envia um comando (sem o prefixo '/') e devolve o seu id."""
@@ -218,27 +234,41 @@ class ChatApp(App):
         """Render a message as a container with header and body."""
         sender = "You" if msg.is_sent_by_me else "Other"
         time_str = msg.timestamp.strftime("%H:%M")
-        prefix = f"[{time_str}] {sender}"
-        if msg.is_command:
-            # For commands, we can still show them specially if needed
-            # But for now, treat as regular message with command text
-            pass
+        prefix = f"[{time_str}] {sender} · {msg.id}"
         if msg.reply_to is not None:
-            prefix += f" ↳ resposta a #{msg.reply_to}"
-        
+            prefix += " ↳ respondendo"
+
         header = Static(prefix, classes="message-header")
-        body = Markdown(msg.text, classes="message-body")
-        
-        bubble = Vertical(header, body, classes="message-bubble")
-        
+        parts: List[Widget] = [header]
+
+        # Citação da mensagem original quando é uma resposta
+        if msg.reply_to is not None:
+            original = self._find_message(msg.reply_to)
+            if original is not None:
+                preview = " ".join(original.text.split())[:60]
+                parts.append(
+                    Static(f"↳ {original.id}: {preview}…", classes="message-quote")
+                )
+
+        parts.append(Markdown(msg.text, classes="message-body"))
+
+        bubble = Vertical(*parts, classes="message-bubble")
+
         # Container to align left or right
         container = Horizontal(bubble, classes="message-container")
         if msg.is_sent_by_me:
             container.add_class("sent")
         else:
             container.add_class("received")
-        
+
         return container
+
+    def _find_message(self, msg_id: str) -> Optional[ChatMessage]:
+        """Devolve a mensagem com o id dado, ou None."""
+        for m in self.messages:
+            if m.id == msg_id:
+                return m
+        return None
 
     def _scroll_to_bottom(self) -> None:
         """Scrolls the chat log to the bottom."""

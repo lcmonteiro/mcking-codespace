@@ -18,7 +18,7 @@ class DemoChat(ChatApp):
     def compose(self) -> ComposeResult:
         yield Container(
             ScrollableContainer(id="chat-log"),
-            Input(placeholder="Escreve /help, /code, ou uma mensagem…", id="input-line"),
+            Input(placeholder="Escreve /help, /code, /reply <id> <texto>, ou uma mensagem…", id="input-line"),
         )
 
     def on_mount(self) -> None:
@@ -41,18 +41,33 @@ class DemoChat(ChatApp):
             return
         inp.value = ""
         if text.startswith("/"):
-            self.send_command(text[1:].strip())
+            parts = text[1:].split(maxsplit=1)
+            if not parts:
+                return
+            cmd = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            if cmd == "reply":
+                # /reply <msg_id> <text>
+                reply_parts = args.split(maxsplit=1)
+                if len(reply_parts) != 2:
+                    self.receive_message("Uso: /reply <msg_id> <texto>")
+                    return
+                reply_id, reply_text = reply_parts
+                mid = self.send_message(reply_text, reply_to=reply_id)
+                self._fake_reply(mid, reply_text)
+            else:
+                self.send_command(text[1:].strip())
         else:
             mid = self.send_message(text)
             self._fake_reply(mid, text)
-
     def _handle_command(self, command: str) -> None:
         """Bot que responde a comandos conhecidos."""
         if command == "help":
             self.receive_message(
                 "## Comandos disponíveis\n\n"
                 "- `/help` — mostra esta ajuda\n"
-                "- `/code` — mostra um bloco de código em Python"
+                "- `/code` — mostra um bloco de código em Python\n"
+                "- `/reply <id> <texto>` — responde a uma mensagem"
             )
         elif command == "code":
             self.receive_message(
