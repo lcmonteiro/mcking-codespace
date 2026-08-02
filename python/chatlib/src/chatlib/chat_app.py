@@ -72,6 +72,18 @@ class ChatApp(App):
         height: 1fr;
         overflow-y: auto;
         padding: 1 2;
+        background: $surface;
+    }
+    
+    /* Make scrollbar more visible */
+    .scrollbar {
+        background: $surface-darken-1;
+        color: $primary;
+    }
+    
+    .scrollbar:hover {
+        background: $surface-darken-2;
+        color: $primary-darken-2;
     }
     #input-line {
         height: 3;
