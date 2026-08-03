@@ -144,7 +144,7 @@ class ChatApp(App):
     }
     .message-bubble {
         layout: vertical;
-        max-width: 80%;
+        max-width: 90%;
         padding: 1 2;
         border: round #202c33;
         background: #202c33;
