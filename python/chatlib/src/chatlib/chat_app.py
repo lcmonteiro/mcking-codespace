@@ -98,36 +98,43 @@ class ChatApp(App):
     CSS = """
     Screen {
         layout: vertical;
+        background: #0b141a;
     }
     #chat-log {
         height: 1fr;
         overflow-y: auto;
         padding: 1 2;
-        background: $surface;
+        background: #0b141a;
     }
     
     /* Make scrollbar more visible */
     .scrollbar {
-        background: $surface-darken-1;
-        color: $primary;
+        background: #1f2c33;
+        color: #8696a0;
     }
     
     .scrollbar:hover {
-        background: $surface-darken-2;
-        color: $primary-darken-2;
+        background: #2a3942;
+        color: #e9edef;
     }
     #input-line {
         height: 3;
         dock: bottom;
+        background: #202c33;
+        border: round #2a3942;
+        color: #e9edef;
+    }
+    #input-line:focus {
+        border: round #00a884;
     }
     .message-container {
         layout: horizontal;
         width: 100%;
-        padding: 1 0;
+        padding: 0 0 1 0;
         height: auto;
     }
     .message-container.reply-target .message-bubble {
-        border: thick $accent;
+        outline: thick #00a884;
     }
     .message-container.sent {
         align: right top;
@@ -137,33 +144,38 @@ class ChatApp(App):
     }
     .message-bubble {
         layout: vertical;
-        max-width: 60%;
+        max-width: 70%;
         padding: 1 2;
-        border: round $primary;
-        background: $surface;
-        color: $text;
+        border: round #202c33;
+        background: #202c33;
+        color: #e9edef;
         height: auto;
     }
     .message-container.sent .message-bubble {
-        background: $accent;
-        color: $text;
+        background: #005c4b;
+        border: round #005c4b;
+        color: #e9edef;
     }
     .message-container.received .message-bubble {
-        background: $primary-darken-2;
-        color: $text;
+        background: #202c33;
+        border: round #202c33;
+        color: #e9edef;
     }
     .message-header {
-        color: $text-muted;
-        text-style: italic;
+        color: #7de0a3;
+        text-style: bold;
         margin: 0;
+    }
+    .message-container.sent .message-header {
+        color: #8fd6b4;
     }
     .message-body {
         margin: 0;
     }
     .message-quote {
-        color: $text-muted;
-        background: $panel;
-        border-left: thick $primary;
+        color: #8696a0;
+        background: #111b21;
+        border-left: thick #00a884;
         padding: 0 1;
         margin: 0 0 1 0;
     }
