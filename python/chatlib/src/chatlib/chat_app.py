@@ -124,6 +124,7 @@ class ChatApp(App):
         layout: horizontal;
         width: 100%;
         padding: 1 0;
+        height: auto;
     }
     .message-container.reply-target .message-bubble {
         border: thick $accent;
@@ -141,6 +142,7 @@ class ChatApp(App):
         border: round $primary;
         background: $surface;
         color: $text;
+        height: auto;
     }
     .message-container.sent .message-bubble {
         background: $accent;
