@@ -91,8 +91,12 @@ class ChatApp(App):
     """Aplicação de chat terminal construída com Textual.
 
     Usage:
-        app = ChatApp(command_handler=my_handler)
+        app = ChatApp(command_handler=my_handler, max_displayed=100)
         app.run()
+
+    ``max_displayed`` limita quantas mensagens estão renderizadas no
+    terminal (janela deslizante). O histórico completo fica sempre em
+    ``app.messages`` — as antigas só saem do ecrã, não da memória.
     """
 
     CSS = """
@@ -184,6 +188,7 @@ class ChatApp(App):
     def __init__(
         self,
         command_handler: Optional[Callable[[str], None]] = None,
+        max_displayed: int = 100,
     ) -> None:
         super().__init__()
         self.command_handler : Optional[Callable[[str], None]] = command_handler
@@ -196,6 +201,10 @@ class ChatApp(App):
         self._reply_target : Optional[str] = None
         self._msg_widgets  : Dict[str, Widget] = {}
         self._input_placeholder = "Type a message or /command"
+        # Nº máximo de mensagens renderizadas no terminal (histórico fica completo em ``messages``)
+        self.max_displayed: int = max_displayed
+        # IDs das mensagens atualmente renderizadas, por ordem
+        self._rendered_msg_ids: List[str] = []
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -319,17 +328,47 @@ class ChatApp(App):
 
     def _add_message(self, msg: ChatMessage) -> str:
         """Adiciona uma mensagem ao histórico e re-renderiza o log."""
+        chat_log = self.query_one("#chat-log", ScrollableContainer)
+        # Só faz auto-scroll se o user já estiver no fundo (senão perde a posição de leitura)
+        was_at_bottom = chat_log.scroll_offset.y >= (chat_log.max_scroll_y - 1)
         self.messages.append(msg)
         self._refresh_chat_log()
-        self._scroll_to_bottom()
+        if was_at_bottom:
+            self._scroll_to_bottom()
         return msg.id
 
     def _refresh_chat_log(self) -> None:
-        """Monta apenas as mensagens novas no log (renderização incremental)."""
+        """Renderiza apenas as últimas ``max_displayed`` mensagens (janela deslizante).
+
+        Monta as novas e desmonta as antigas que saíram da janela, para
+        limitar a quantidade de widgets no terminal.
+        """
         chat_log = self.query_one("#chat-log", ScrollableContainer)
-        for msg in self.messages[self._rendered:]:
-            chat_log.mount(self._render_message(msg))
-        self._rendered = len(self.messages)
+
+        # Janela desejada: as últimas max_displayed mensagens
+        total = len(self.messages)
+        start = max(0, total - self.max_displayed)
+        desired_ids = [m.id for m in self.messages[start:]]
+
+        current = set(self._rendered_msg_ids)
+        desired = set(desired_ids)
+
+        # Desmonta mensagens que saíram da janela
+        for msg_id in self._rendered_msg_ids:
+            if msg_id not in desired:
+                widget = self._msg_widgets.pop(msg_id, None)
+                if widget is not None:
+                    widget.remove()
+
+        # Monta as novas, na ordem correta
+        for msg_id in desired_ids:
+            if msg_id not in current:
+                msg = self._find_message(msg_id)
+                if msg is not None:
+                    chat_log.mount(self._render_message(msg))
+
+        self._rendered_msg_ids = desired_ids
+        self._rendered = total
 
     def _render_message(self, msg: ChatMessage) -> Widget:
         """Render a message as a clickable container with header and body."""
