@@ -10,6 +10,6 @@ Example:
     >>> app.run()
 """
 
-from .chat_app import ChatApp
+from .chat_app import ChatApp, ChatMessage
 
-__all__ = ["ChatApp"]
+__all__ = ["ChatApp", "ChatMessage"]

@@ -61,7 +61,7 @@ class DemoChat(ChatApp):
             # Se houver uma mensagem selecionada (clique), responde-lhe
             mid = self.send_pending_reply(text) or self.send_message(text)
             self._fake_reply(mid, text)
-    def _handle_command(self, command: str) -> None:
+    def on_command(self, command: str) -> None:
         """Bot que responde a comandos conhecidos."""
         if command == "help":
             self.receive_message(

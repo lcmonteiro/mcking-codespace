@@ -91,7 +91,7 @@ class ChatApp(App):
     """Aplicação de chat terminal construída com Textual.
 
     Usage:
-        app = ChatApp(on_command=my_handler)
+        app = ChatApp(command_handler=my_handler)
         app.run()
     """
 
@@ -181,9 +181,12 @@ class ChatApp(App):
     }
     """
 
-    def __init__(self, on_command: Optional[Callable[[str], None]] = None) -> None:
+    def __init__(
+        self,
+        command_handler: Optional[Callable[[str], None]] = None,
+    ) -> None:
         super().__init__()
-        self.on_command : Optional[Callable[[str], None]] = on_command
+        self.command_handler : Optional[Callable[[str], None]] = command_handler
         self.messages  : List[ChatMessage] = []
         self._next_id  : int = 1
         self._rendered : int = 0
@@ -231,31 +234,32 @@ class ChatApp(App):
         text : Conteúdo da mensagem.
         reply_to : Id da mensagem a que esta responde (opcional).
         """
-        msg_id = self._add_message(
-            ChatMessage(
-                id=self._new_id(),
-                text=text,
-                is_command=False,
-                is_sent_by_me=True,
-                reply_to=reply_to,
-            )
+        msg = ChatMessage(
+            id=self._new_id(),
+            text=text,
+            is_command=False,
+            is_sent_by_me=True,
+            reply_to=reply_to,
         )
+        self._add_message(msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg_id)
-        return msg_id
+            self._replies.setdefault(reply_to, []).append(msg_id := msg.id)
+        self.on_message_sent(msg)
+        return msg.id
 
     def send_command(self, command: str) -> str:
         """Envia um comando (sem o prefixo '/') e devolve o seu id."""
         logger.info("Command executed: %s", command)
-        self._handle_command(command)
-        return self._add_message(
-            ChatMessage(
-                id=self._new_id(),
-                text=command,
-                is_command=True,
-                is_sent_by_me=True,
-            )
+        msg = ChatMessage(
+            id=self._new_id(),
+            text=command,
+            is_command=True,
+            is_sent_by_me=True,
         )
+        self._add_message(msg)
+        self.on_command(command)
+        self.on_message_sent(msg)
+        return msg.id
 
     def receive_message(
         self,
@@ -269,32 +273,42 @@ class ChatApp(App):
         text : Conteúdo da mensagem.
         reply_to : Id de uma mensagem enviada a que esta responde (opcional).
         """
-        msg_id = self._add_message(
-            ChatMessage(
-                id=self._new_id(),
-                text=text,
-                is_command=False,
-                is_sent_by_me=False,
-                reply_to=reply_to,
-            )
+        msg = ChatMessage(
+            id=self._new_id(),
+            text=text,
+            is_command=False,
+            is_sent_by_me=False,
+            reply_to=reply_to,
         )
+        self._add_message(msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg_id)
-        return msg_id
+            self._replies.setdefault(reply_to, []).append(msg.id)
+        self.on_message_received(msg)
+        return msg.id
 
     def get_replies(self, msg_id: str) -> List[str]:
         """Devolve os ids das mensagens que respondem a *msg_id*."""
         return list(self._replies.get(msg_id, []))
 
-    # === Hooks ======================================================================
+    # === Hooks (callbacks — todos começam por ``on_``) ==============================
 
-    def _handle_command(self, command: str) -> None:
-        """Hook para tratar comandos. Override para comportamento próprio.
+    def on_command(self, command: str) -> None:
+        """Chamado quando o user envia um comando (sem o prefixo '/').
 
-        Por omissão delega no callback ``on_command`` passado no __init__.
+        Override para comportamento próprio; por omissão delega no callback
+        ``command_handler`` passado no __init__.
         """
-        if self.on_command is not None:
-            self.on_command(command)
+        if self.command_handler is not None:
+            self.command_handler(command)
+
+    def on_message_sent(self, msg: ChatMessage) -> None:
+        """Chamado depois de enviar uma mensagem (normal ou comando).
+
+        Útil para ligar o envio a um transporte (WebSocket, API, …).
+        """
+
+    def on_message_received(self, msg: ChatMessage) -> None:
+        """Chamado depois de receber uma mensagem de fora."""
 
     # === Internals ==================================================================
 
