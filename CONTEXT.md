@@ -35,6 +35,9 @@ scripts/   — Build scripts, helpers
 
 ## Recent Sessions
 
+- **2026-08-05** — `python/landscape.py`: `--once` ganhou benchmark do loop update+render (fps para stderr, stdout continua ASCII puro) e flags `--width/--height` documentadas no usage. Commit do projeto (ficou por commitar a 2026-08-03) + entrada no README.
+- **2026-08-03** — `python/landscape.py`: classic demoscene 3D terrain flyover (6-octave fBm value noise periódico → mundo toroidal; ray-march heightfield por coluna com passos multiplicativos; cliffs ridge-lit, foam nas margens, marés, distance fog; sol/lua com glow, estrelas a cintilar à noite; 5 palettes; controlo de cruzeiro, auto-cycle de palettes; `--once` ASCII frame dump). *Ficou por commitar nesse dia — a sessão virou para o chatlib.*
+
 - **2026-08-02** — `python/fire.py`: classic demoscene fire (Doom-style heat-diffusion grid: each cell averages the 4 cells below it × cooling factor; bottom rows re-seeded with random fuel). Half-block ▀ truecolor rendering, smoothed wind (←/→ arrows), fuel control (+/-), ember sparks, random flare bursts, 5 palettes (Fire/Inferno/Toxic/Neon/Ice), auto-cycle, `--once` ASCII frame dump for demos/tests. Wind now clamped to ±3.0 everywhere (key + CLI).
 
 - **2026-08-01** — `python/donut.py`: classic demoscene rotating 3D torus (the famous one-liner, grown up). Solid meshes torus/sphere/cube, per-vertex Lambert shading with ambient floor, z-buffer occlusion, half-block ▀ truecolor rendering, wireframe & ASCII-ramp modes, 5 palettes, spin-speed control, organic wobble, `--once` ASCII frame dump for demos/tests.
