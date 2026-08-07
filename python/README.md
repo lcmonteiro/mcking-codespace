@@ -26,6 +26,7 @@
 | [`donut.py`](./donut.py) | 🍩 Classic demoscene rotating 3D torus — Lambert shading, z-buffer, torus/sphere/cube, wireframe & ramp modes, 5 palettes |
 | [`fire.py`](./fire.py) | 🔥 Classic demoscene fire — Doom-style heat-diffusion flames, wind/fuel controls, ember sparks, flare bursts, 5 palettes |
 | [`landscape.py`](./landscape.py) | 🌄 Classic demoscene 3D terrain flyover — fBm heightmap toroidal, ray-marched horizon, tides, ridge-lit cliffs, 5 palettes |
+| [`ripples.py`](./ripples.py) | 💧 Classic demoscene water — 2D wave propagation, fake slope lighting, rain mode, stones & splashes, 5 palettes |
 
 ---
 

@@ -55,6 +55,7 @@ Este repo está deployado em [**lcmonteiro.github.io/mcking-codespace**](https:/
 | 🍩 **Donut** | _(terminal-only)_ | Classic demoscene rotating 3D torus — Lambert shading, torus/sphere/cube, wireframe, 5 palettes |
 | 🔥 **Fire** | _(terminal-only)_ | Classic demoscene fire — Doom-style heat-diffusion flames, wind/fuel controls, embers, flare bursts, 5 palettes |
 | 🌄 **Landscape** | _(terminal-only)_ | Classic demoscene 3D terrain flyover — fBm heightmap toroidal, ray-marched horizon, tides, ridge-lit cliffs, 5 palettes |
+| 💧 **Ripples** | _(terminal-only)_ | Classic demoscene water — 2D wave propagation, fake slope lighting, rain mode, stones & splashes, 5 palettes |
 
 O deploy corre automaticamente em cada push para `master` (`.github/workflows/pages.yml`).
 

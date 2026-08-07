@@ -35,6 +35,7 @@ scripts/   — Build scripts, helpers
 
 ## Recent Sessions
 
+- **2026-08-07** — `python/ripples.py`: classic demoscene water (canonical 2D wave propagation: `new = (avg 4 neighbours)/2 − old × damping` on a padded heightfield grid with zero border so the hot loops never bounds-check; fake slope lighting `b = LIGHT_Z − ∇h·L` — calm water mid-tone, troughs darken, crests clamp to white sparkles). Stone drops (space) & splashes (s) via negative blobs in the *old* grid; rain mode (d) with drizzle biased to the upper pool; damping control (+/-); 5 palettes (Lagoon/Ocean/Neon/Toxic/Sunset); `--once` ASCII dump + benchmark (~270 fps headless at 90×44 grid).
 - **2026-08-05** — `python/landscape.py`: `--once` ganhou benchmark do loop update+render (fps para stderr, stdout continua ASCII puro) e flags `--width/--height` documentadas no usage. Commit do projeto (ficou por commitar a 2026-08-03) + entrada no README.
 - **2026-08-03** — `python/landscape.py`: classic demoscene 3D terrain flyover (6-octave fBm value noise periódico → mundo toroidal; ray-march heightfield por coluna com passos multiplicativos; cliffs ridge-lit, foam nas margens, marés, distance fog; sol/lua com glow, estrelas a cintilar à noite; 5 palettes; controlo de cruzeiro, auto-cycle de palettes; `--once` ASCII frame dump). *Ficou por commitar nesse dia — a sessão virou para o chatlib.*
 
