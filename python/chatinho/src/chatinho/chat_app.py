@@ -13,6 +13,7 @@ thread, or network callback to inject incoming messages.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from importlib.resources import files as resources_files
 from typing import Callable, Dict, List, Optional
 
 from textual import events
@@ -97,93 +98,16 @@ class ChatApp(App):
     ``max_displayed`` limits how many messages are rendered in the
     terminal (sliding window). The full history is always kept in
     ``app.messages`` — older messages only leave the screen, not memory.
+
+    The UI stylesheet lives in ``chat_style.css`` and is loaded from the
+    package resources, so it can be overridden by subclassing and setting
+    ``CSS`` or ``CSS_PATH``.
     """
 
-    CSS = """
-    Screen {
-        layout: vertical;
-        background: #0b141a;
-    }
-    #chat-log {
-        height: 1fr;
-        overflow-y: auto;
-        padding: 1 2;
-        background: #0b141a;
-    }
-    
-    /* Make scrollbar more visible */
-    .scrollbar {
-        background: #1f2c33;
-        color: #8696a0;
-    }
-    
-    .scrollbar:hover {
-        background: #2a3942;
-        color: #e9edef;
-    }
-    #input-line {
-        height: 3;
-        dock: bottom;
-        background: #202c33;
-        border: round #2a3942;
-        color: #e9edef;
-    }
-    #input-line:focus {
-        border: round #00a884;
-    }
-    .message-container {
-        layout: horizontal;
-        width: 100%;
-        padding: 0 0 1 0;
-        height: auto;
-    }
-    .message-container.reply-target .message-bubble {
-        outline: thick #00a884;
-    }
-    .message-container.sent {
-        align: right top;
-    }
-    .message-container.received {
-        align: left top;
-    }
-    .message-bubble {
-        layout: vertical;
-        max-width: 90%;
-        padding: 1 2;
-        border: round #202c33;
-        background: #202c33;
-        color: #e9edef;
-        height: auto;
-    }
-    .message-container.sent .message-bubble {
-        background: #005c4b;
-        border: round #005c4b;
-        color: #e9edef;
-    }
-    .message-container.received .message-bubble {
-        background: #202c33;
-        border: round #202c33;
-        color: #e9edef;
-    }
-    .message-header {
-        color: #7de0a3;
-        text-style: bold;
-        margin: 0;
-    }
-    .message-container.sent .message-header {
-        color: #8fd6b4;
-    }
-    .message-body {
-        margin: 0;
-    }
-    .message-quote {
-        color: #8696a0;
-        background: #111b21;
-        border-left: thick #00a884;
-        padding: 0 1;
-        margin: 0 0 1 0;
-    }
-    """
+    # Loaded from chat_style.css at class definition time.
+    CSS = (
+        resources_files("chatinho") / "chat_style.css"
+    ).read_text(encoding="utf-8")
 
     def __init__(
         self,
