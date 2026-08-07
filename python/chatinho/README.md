@@ -59,6 +59,31 @@ Or directly:
 python demo.py
 ```
 
+### Customising the theme
+
+You can create a custom :class:`~chatinho.chat_style.ChatStyle` and pass it to ``ChatApp``:
+
+```python
+from chatinho import ChatApp, ChatStyle
+
+# Example: a greenish theme
+custom_style = ChatStyle(
+    accent="#00ff88",
+    sent_bubble_bg="#004422",
+    received_header="#88ffcc",
+)
+
+class MyChatApp(ChatApp):
+    def on_command(self, command: str) -> None:
+        if command == "hello":
+            self.receive_message("Hello from the bot!")
+        else:
+            self.receive_message(f"Unknown command: {command}")
+
+if __name__ == "__main__":
+    MyChatApp(style=custom_style).run()
+```
+
 ### Embedding in Your Own Application
 
 ```python

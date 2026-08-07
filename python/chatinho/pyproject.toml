@@ -46,7 +46,7 @@ where = ["src"]
 include = ["chatinho*"]
 
 [tool.setuptools.package-data]
-chatinho = ["py.typed", "*.css"]
+chatinho = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

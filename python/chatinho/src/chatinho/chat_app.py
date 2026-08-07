@@ -13,7 +13,6 @@ thread, or network callback to inject incoming messages.
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from importlib.resources import files as resources_files
 from typing import Callable, Dict, List, Optional
 
 from textual import events
@@ -21,6 +20,8 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, ScrollableContainer, Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Input, Markdown, Static
+
+from .chat_style import ChatStyle
 
 logger = logging.getLogger(__name__)
 
@@ -99,22 +100,23 @@ class ChatApp(App):
     terminal (sliding window). The full history is always kept in
     ``app.messages`` — older messages only leave the screen, not memory.
 
-    The UI stylesheet lives in ``chat_style.css`` and is loaded from the
-    package resources, so it can be overridden by subclassing and setting
-    ``CSS`` or ``CSS_PATH``.
+    The theme is built from a :class:`~chatinho.chat_style.ChatStyle`;
+    pass one to ``style=`` to customise colours programmatically.
     """
 
-    # Loaded from chat_style.css at class definition time.
-    CSS = (
-        resources_files("chatinho") / "chat_style.css"
-    ).read_text(encoding="utf-8")
+    # Default stylesheet, rendered from ChatStyle() at class definition time.
+    CSS = ChatStyle().to_css()
 
     def __init__(
         self,
         command_handler: Optional[Callable[[str], None]] = None,
         max_displayed: int = 100,
+        style: Optional[ChatStyle] = None,
     ) -> None:
         super().__init__()
+        if style is not None:
+            # Instance-level override: Textual reads ``self.CSS`` at mount.
+            self.CSS = style.to_css()
         self.command_handler : Optional[Callable[[str], None]] = command_handler
         self.messages  : List[ChatMessage] = []
         self._next_id  : int = 1
