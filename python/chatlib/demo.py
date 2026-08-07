@@ -1,6 +1,6 @@
-"""Demo da lib chatlib: mostra markdown, code blocks, comandos e replies.
+"""Demo of the chatlib library: shows markdown, code blocks, commands and replies.
 
-Corre com:  bash run.sh
+Run with:  bash run.sh
 """
 
 import time
@@ -13,27 +13,27 @@ from chatlib import ChatApp
 
 
 class DemoChat(ChatApp):
-    """ChatApp com um bot simulado que responde a comandos e mensagens."""
+    """ChatApp with a simulated bot that replies to commands and messages."""
 
     def compose(self) -> ComposeResult:
         yield Container(
             ScrollableContainer(id="chat-log"),
-            Input(placeholder="Escreve /help, /code, /reply <id> <texto>, ou uma mensagem…", id="input-line"),
+            Input(placeholder="Type /help, /code, /reply <id> <text>, or a message…", id="input-line"),
         )
 
     def on_mount(self) -> None:
         super().on_mount()
-        # Boas-vindas com markdown + code block
+        # Welcome message with markdown + code block
         self.receive_message(
-            "Bem-vindo ao **chatlib**! 👋\n\n"
-            "Podes enviar comandos:\n"
-            "- `/help` — mostra esta ajuda\n"
-            "- `/code` — mostra um exemplo com syntax highlighting\n\n"
-            "Tudo o que escreveres aparece renderizado em Markdown."
+            "Welcome to **chatlib**! 👋\n\n"
+            "You can send commands:\n"
+            "- `/help` — shows this help\n"
+            "- `/code` — shows an example with syntax highlighting\n\n"
+            "Everything you type is rendered as Markdown."
         )
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
-        """Interceta comandos antes de os passar ao ChatApp."""
+        """Intercepts commands before passing them to ChatApp."""
         del message
         inp = self.query_one("#input-line", Input)
         text = inp.value.strip()
@@ -50,7 +50,7 @@ class DemoChat(ChatApp):
                 # /reply <msg_id> <text>
                 reply_parts = args.split(maxsplit=1)
                 if len(reply_parts) != 2:
-                    self.receive_message("Uso: /reply <msg_id> <texto>")
+                    self.receive_message("Usage: /reply <msg_id> <text>")
                     return
                 reply_id, reply_text = reply_parts
                 mid = self.send_message(reply_text, reply_to=reply_id)
@@ -58,22 +58,22 @@ class DemoChat(ChatApp):
             else:
                 self.send_command(text[1:].strip())
         else:
-            # Se houver uma mensagem selecionada (clique), responde-lhe
+            # If a message is selected (click), reply to it
             mid = self.send_pending_reply(text) or self.send_message(text)
             self._fake_reply(mid, text)
     def on_command(self, command: str) -> None:
-        """Bot que responde a comandos conhecidos."""
+        """Bot that replies to known commands."""
         match command:
             case "help":
                 self.receive_message(
-                    "## Comandos disponíveis\n\n"
-                    "- `/help` — mostra esta ajuda\n"
-                    "- `/code` — mostra um bloco de código em Python\n"
-                    "- `/reply <id> <texto>` — responde a uma mensagem"
+                    "## Available commands\n\n"
+                    "- `/help` — shows this help\n"
+                    "- `/code` — shows a Python code block\n"
+                    "- `/reply <id> <text>` — replies to a message"
                 )
             case "code":
                 self.receive_message(
-                    "Aqui tens um exemplo com **syntax highlighting**:\n\n"
+                    "Here is an example with **syntax highlighting**:\n\n"
                     "```python\n"
                     "def fib(n: int) -> int:\n"
                     "    a, b = 0, 1\n"
@@ -83,12 +83,12 @@ class DemoChat(ChatApp):
                     "```"
                 )
             case _:
-                self.receive_message(f"Comando desconhecido: `/{command}`. Tenta `/help`.")
+                self.receive_message(f"Unknown command: `/{command}`. Try `/help`.")
 
     def _fake_reply(self, msg_id: str, text: str) -> None:
-        """Simula uma resposta do 'outro lado' à mensagem enviada."""
+        """Simulates a reply from the 'other side' to the sent message."""
         time.sleep(0.6)
-        self.receive_message(f"Recebido: _{text}_", reply_to=msg_id)
+        self.receive_message(f"Received: _{text}_", reply_to=msg_id)
 
 
 if __name__ == "__main__":

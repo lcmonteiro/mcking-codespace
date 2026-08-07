@@ -1,8 +1,8 @@
 """ChatLib: a small chat client library built on Textual.
 
-Enviar mensagens, enviar comandos, receber mensagens e receber respostas
-(replies) a mensagens enviadas, com renderização de Markdown e syntax
-highlighting para blocos de código.
+Send messages, send commands, receive messages and receive replies to
+sent messages, with Markdown rendering and syntax highlighting for code
+blocks.
 
 Example:
     >>> from chatlib import ChatApp

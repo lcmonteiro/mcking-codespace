@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # setup.sh — chatlib package setup (pyproject.toml)
-# Cria o .venv e instala TODAS as dependências.
-# Se o uv não estiver instalado, instala-o automaticamente.
+# Creates the .venv and installs ALL dependencies.
+# If uv is not installed, installs it automatically.
 set -euo pipefail
 
 echo "🐍 chatlib setup — preparing virtual environment..."
 
-# Já está pronto? Skip (não exige uv).
+# Already ready? Skip (does not require uv).
 if [ -x .venv/bin/python ] && .venv/bin/python -c "import textual" 2>/dev/null; then
     echo "✅ .venv already ready — skipping"
     exit 0
 fi
 
-# Localizar uv: PATH ou localizações comuns (inclui $PREFIX para Termux).
+# Locate uv: PATH or common locations (includes $PREFIX for Termux).
 find_uv() {
     local cand
     for cand in "$(command -v uv 2>/dev/null || true)" \
@@ -28,36 +28,36 @@ find_uv() {
 
 UV="$(find_uv || true)"
 
-# Detetar Termux/Android: o installer oficial do uv não suporta aarch64-linux-android.
+# Detect Termux/Android: the official uv installer does not support aarch64-linux-android.
 is_termux() {
     [ -n "${PREFIX:-}" ] && [ -x "$PREFIX/bin/pkg" ]
 }
 
-# Se não existe uv, instala automaticamente.
+# If uv does not exist, install it automatically.
 if [ -z "$UV" ]; then
     echo "⬇️  uv not found — installing automatically..."
     if is_termux; then
-        echo "   (Termux detetado — a instalar via pkg)"
+        echo "   (Termux detected — installing via pkg)"
         pkg install -y uv
     elif command -v curl &>/dev/null; then
         curl -LsSf https://astral.sh/uv/install.sh | sh
     elif command -v wget &>/dev/null; then
         wget -qO- https://astral.sh/uv/install.sh | sh
     elif command -v pip3 &>/dev/null; then
-        echo "   (sem curl/wget — fallback para pip3)"
+        echo "   (no curl/wget — falling back to pip3)"
         pip3 install --user uv
     else
-        echo "❌ Sem curl/wget/pip — instala uv manualmente: https://docs.astral.sh/uv/"
+        echo "❌ No curl/wget/pip — install uv manually: https://docs.astral.sh/uv/"
         echo "   (Termux: pkg install uv)"
         exit 1
     fi
     UV="$(find_uv || true)"
     if [ -z "$UV" ]; then
-        echo "❌ uv installed but not found — adiciona ~/.local/bin ao PATH e corre de novo."
-        echo "   (PATH atual: $PATH)"
+        echo "❌ uv installed but not found — add ~/.local/bin to PATH and run again."
+        echo "   (Current PATH: $PATH)"
         exit 1
     fi
-    echo "✅ uv instalado em: $UV"
+    echo "✅ uv installed at: $UV"
 fi
 
 if [ ! -d .venv ]; then
@@ -67,4 +67,4 @@ fi
 
 echo "📦 Installing all dependencies..."
 "$UV" sync
-echo "✅ Setup complete — run: ./run.sh  (ou .venv/bin/python demo.py)"
+echo "✅ Setup complete — run: ./run.sh  (or .venv/bin/python demo.py)"

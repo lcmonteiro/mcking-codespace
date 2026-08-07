@@ -58,7 +58,7 @@ class TouchScrollableContainer(ScrollableContainer):
 
 
 class _MessageContainer(Horizontal):
-    """Container de mensagem clicável — seleciona a msg como alvo de reply."""
+    """Clickable message container — selects the msg as a reply target."""
 
     def __init__(
         self,
@@ -77,7 +77,7 @@ class _MessageContainer(Horizontal):
 
 @dataclass
 class ChatMessage:
-    """Representa uma mensagem de chat."""
+    """Represents a chat message."""
 
     id          : str
     text        : str
@@ -88,15 +88,15 @@ class ChatMessage:
 
 
 class ChatApp(App):
-    """Aplicação de chat terminal construída com Textual.
+    """Terminal chat application built with Textual.
 
     Usage:
         app = ChatApp(command_handler=my_handler, max_displayed=100)
         app.run()
 
-    ``max_displayed`` limita quantas mensagens estão renderizadas no
-    terminal (janela deslizante). O histórico completo fica sempre em
-    ``app.messages`` — as antigas só saem do ecrã, não da memória.
+    ``max_displayed`` limits how many messages are rendered in the
+    terminal (sliding window). The full history is always kept in
+    ``app.messages`` — older messages only leave the screen, not memory.
     """
 
     CSS = """
@@ -197,13 +197,13 @@ class ChatApp(App):
         self._rendered : int = 0
         # Mapping from message id to list of reply ids (for threading)
         self._replies  : Dict[str, List[str]] = {}
-        # Mensagem selecionada como alvo de resposta (via clique)
+        # Message selected as reply target (via click)
         self._reply_target : Optional[str] = None
         self._msg_widgets  : Dict[str, Widget] = {}
         self._input_placeholder = "Type a message or /command"
-        # Nº máximo de mensagens renderizadas no terminal (histórico fica completo em ``messages``)
+        # Max number of messages rendered in the terminal (history stays complete in ``messages``)
         self.max_displayed: int = max_displayed
-        # IDs das mensagens atualmente renderizadas, por ordem
+        # IDs of the messages currently rendered, in order
         self._rendered_msg_ids: List[str] = []
 
     def compose(self) -> ComposeResult:
@@ -237,11 +237,11 @@ class ChatApp(App):
     # === Public API =================================================================
 
     def send_message(self, text: str, *, reply_to: Optional[str] = None) -> str:
-        """Envia uma mensagem normal e devolve o seu id.
+        """Sends a normal message and returns its id.
 
         Args:
-        text : Conteúdo da mensagem.
-        reply_to : Id da mensagem a que esta responde (opcional).
+        text : Message content.
+        reply_to : Id of the message this one replies to (optional).
         """
         msg = ChatMessage(
             id=self._new_id(),
@@ -257,7 +257,7 @@ class ChatApp(App):
         return msg.id
 
     def send_command(self, command: str) -> str:
-        """Envia um comando (sem o prefixo '/') e devolve o seu id."""
+        """Sends a command (without the '/' prefix) and returns its id."""
         logger.info("Command executed: %s", command)
         msg = ChatMessage(
             id=self._new_id(),
@@ -276,11 +276,11 @@ class ChatApp(App):
         *,
         reply_to: Optional[str] = None,
     ) -> str:
-        """Recebe uma mensagem vinda de fora e devolve o seu id.
+        """Receives a message from outside and returns its id.
 
         Args:
-        text : Conteúdo da mensagem.
-        reply_to : Id de uma mensagem enviada a que esta responde (opcional).
+        text : Message content.
+        reply_to : Id of a sent message this one replies to (optional).
         """
         msg = ChatMessage(
             id=self._new_id(),
@@ -296,28 +296,28 @@ class ChatApp(App):
         return msg.id
 
     def get_replies(self, msg_id: str) -> List[str]:
-        """Devolve os ids das mensagens que respondem a *msg_id*."""
+        """Returns the ids of the messages that reply to *msg_id*."""
         return list(self._replies.get(msg_id, []))
 
-    # === Hooks (callbacks — todos começam por ``on_``) ==============================
+    # === Hooks (callbacks — all start with ``on_``) ==============================
 
     def on_command(self, command: str) -> None:
-        """Chamado quando o user envia um comando (sem o prefixo '/').
+        """Called when the user sends a command (without the '/' prefix).
 
-        Override para comportamento próprio; por omissão delega no callback
-        ``command_handler`` passado no __init__.
+        Override for custom behavior; by default it delegates to the
+        ``command_handler`` callback passed in __init__.
         """
         if self.command_handler is not None:
             self.command_handler(command)
 
     def on_message_sent(self, msg: ChatMessage) -> None:
-        """Chamado depois de enviar uma mensagem (normal ou comando).
+        """Called after sending a message (normal or command).
 
-        Útil para ligar o envio a um transporte (WebSocket, API, …).
+        Useful for hooking the send to a transport (WebSocket, API, …).
         """
 
     def on_message_received(self, msg: ChatMessage) -> None:
-        """Chamado depois de receber uma mensagem de fora."""
+        """Called after receiving a message from outside."""
 
     # === Internals ==================================================================
 
@@ -327,9 +327,9 @@ class ChatApp(App):
         return msg_id
 
     def _add_message(self, msg: ChatMessage) -> str:
-        """Adiciona uma mensagem ao histórico e re-renderiza o log."""
+        """Adds a message to the history and re-renders the log."""
         chat_log = self.query_one("#chat-log", ScrollableContainer)
-        # Só faz auto-scroll se o user já estiver no fundo (senão perde a posição de leitura)
+        # Only auto-scrolls if the user is already at the bottom (otherwise they lose their reading position)
         was_at_bottom = chat_log.scroll_offset.y >= (chat_log.max_scroll_y - 1)
         self.messages.append(msg)
         self._refresh_chat_log()
@@ -338,14 +338,14 @@ class ChatApp(App):
         return msg.id
 
     def _refresh_chat_log(self) -> None:
-        """Renderiza apenas as últimas ``max_displayed`` mensagens (janela deslizante).
+        """Renders only the last ``max_displayed`` messages (sliding window).
 
-        Monta as novas e desmonta as antigas que saíram da janela, para
-        limitar a quantidade de widgets no terminal.
+        Mounts the new ones and unmounts the old ones that left the window,
+        to limit the number of widgets in the terminal.
         """
         chat_log = self.query_one("#chat-log", ScrollableContainer)
 
-        # Janela desejada: as últimas max_displayed mensagens
+        # Desired window: the last max_displayed messages
         total = len(self.messages)
         start = max(0, total - self.max_displayed)
         desired_ids = [m.id for m in self.messages[start:]]
@@ -353,14 +353,14 @@ class ChatApp(App):
         current = set(self._rendered_msg_ids)
         desired = set(desired_ids)
 
-        # Desmonta mensagens que saíram da janela
+        # Unmount messages that left the window
         for msg_id in self._rendered_msg_ids:
             if msg_id not in desired:
                 widget = self._msg_widgets.pop(msg_id, None)
                 if widget is not None:
                     widget.remove()
 
-        # Monta as novas, na ordem correta
+        # Mount the new ones, in the correct order
         for msg_id in desired_ids:
             if msg_id not in current:
                 msg = self._find_message(msg_id)
@@ -376,12 +376,12 @@ class ChatApp(App):
         time_str = msg.timestamp.strftime("%H:%M")
         prefix = f"[{time_str}] {sender} · {msg.id}"
         if msg.reply_to is not None:
-            prefix += " ↳ respondendo"
+            prefix += " ↳ replying"
 
         header = Static(prefix, classes="message-header")
         parts: List[Widget] = [header]
 
-        # Citação da mensagem original quando é uma resposta
+        # Quote of the original message when this is a reply
         if msg.reply_to is not None:
             original = self._find_message(msg.reply_to)
             if original is not None:
@@ -394,7 +394,7 @@ class ChatApp(App):
 
         bubble = Vertical(*parts, classes="message-bubble")
 
-        # Container clicável — alinha à esquerda/direita e seleciona reply target
+        # Clickable container — aligns left/right and selects the reply target
         container = _MessageContainer(
             bubble,
             msg_id=msg.id,
@@ -409,39 +409,39 @@ class ChatApp(App):
         self._msg_widgets[msg.id] = container
         return container
 
-    # === Reply target (clique) ======================================================
+    # === Reply target (click) ======================================================
 
     def _on_message_clicked(self, msg_id: str) -> None:
-        """Seleciona/desseleciona uma mensagem como alvo de resposta."""
+        """Selects/deselects a message as the reply target."""
         if self._reply_target == msg_id:
             self._clear_reply_target()
         else:
             self._set_reply_target(msg_id)
 
     def _set_reply_target(self, msg_id: str) -> None:
-        """Marca *msg_id* como alvo de resposta e atualiza o input."""
+        """Marks *msg_id* as the reply target and updates the input."""
         self._reply_target = msg_id
         self._refresh_reply_target_ui()
         inp = self.query_one("#input-line", Input)
-        inp.placeholder = f"Responder a {msg_id}…"
+        inp.placeholder = f"Reply to {msg_id}…"
 
     def _clear_reply_target(self) -> None:
-        """Limpa o alvo de resposta e restaura o input."""
+        """Clears the reply target and restores the input."""
         self._reply_target = None
         self._refresh_reply_target_ui()
         inp = self.query_one("#input-line", Input)
         inp.placeholder = self._input_placeholder
 
     def _refresh_reply_target_ui(self) -> None:
-        """Atualiza o realce visual de todas as mensagens."""
+        """Updates the visual highlight of all messages."""
         for msg_id, widget in self._msg_widgets.items():
             widget.set_class(msg_id == self._reply_target, "reply-target")
 
     def send_pending_reply(self, text: str) -> Optional[str]:
-        """Envia *text* como resposta à mensagem selecionada (se houver).
+        """Sends *text* as a reply to the selected message (if any).
 
-        Limpa a seleção. Devolve o id da mensagem enviada, ou None se não
-        houver alvo selecionado.
+        Clears the selection. Returns the id of the sent message, or None
+        if there is no selected target.
         """
         if self._reply_target is None:
             return None
@@ -450,7 +450,7 @@ class ChatApp(App):
         return self.send_message(text, reply_to=target)
 
     def _find_message(self, msg_id: str) -> Optional[ChatMessage]:
-        """Devolve a mensagem com o id dado, ou None."""
+        """Returns the message with the given id, or None."""
         for m in self.messages:
             if m.id == msg_id:
                 return m
