@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# setup.sh — chatlib package setup (pyproject.toml)
+# setup.sh — chatinho package setup (pyproject.toml)
 # Creates the .venv and installs ALL dependencies.
 # If uv is not installed, installs it automatically.
 set -euo pipefail
 
-echo "🐍 chatlib setup — preparing virtual environment..."
+echo "🐍 chatinho setup — preparing virtual environment..."
 
 # Already ready? Skip (does not require uv).
 if [ -x .venv/bin/python ] && .venv/bin/python -c "import textual" 2>/dev/null; then

@@ -1,4 +1,4 @@
-"""Demo of the chatlib library: shows markdown, code blocks, commands and replies.
+"""Demo of the chatinho library: shows markdown, code blocks, commands and replies.
 
 Run with:  bash run.sh
 """
@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, ScrollableContainer
 from textual.widgets import Input, Markdown, Static
 
-from chatlib import ChatApp
+from chatinho import ChatApp
 
 
 class DemoChat(ChatApp):
@@ -25,7 +25,7 @@ class DemoChat(ChatApp):
         super().on_mount()
         # Welcome message with markdown + code block
         self.receive_message(
-            "Welcome to **chatlib**! 👋\n\n"
+            "Welcome to **chatinho**! 👋\n\n"
             "You can send commands:\n"
             "- `/help` — shows this help\n"
             "- `/code` — shows an example with syntax highlighting\n\n"

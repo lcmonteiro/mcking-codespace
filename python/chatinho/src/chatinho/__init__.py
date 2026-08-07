@@ -5,7 +5,7 @@ sent messages, with Markdown rendering and syntax highlighting for code
 blocks.
 
 Example:
-    >>> from chatlib import ChatApp
+    >>> from chatinho import ChatApp
     >>> app = ChatApp()
     >>> app.run()
 """

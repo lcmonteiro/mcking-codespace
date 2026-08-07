@@ -1,4 +1,4 @@
-# chatlib
+# chatinho
 
 A simple, extensible chat client library built on [Textual](https://textual.textualize.io/) for terminal-based chat applications.
 
@@ -24,7 +24,7 @@ A simple, extensible chat client library built on [Textual](https://textual.text
 ```bash
 # Clone the repository
 git clone https://github.com/lcmonteiro/mcking-codespace.git
-cd mcking-codespace/python/chatlib
+cd mcking-codespace/python/chatinho
 
 # Setup virtual environment and install dependencies
 bash setup.sh   # creates .venv and installs textual, etc.
@@ -47,7 +47,7 @@ pip install -e .
 
 ## Quick Start
 
-Run the demo to see chatlib in action:
+Run the demo to see chatinho in action:
 
 ```bash
 bash run.sh
@@ -62,7 +62,7 @@ python demo.py
 ### Embedding in Your Own Application
 
 ```python
-from chatlib import ChatApp
+from chatinho import ChatApp
 
 class MyChatApp(ChatApp):
     def on_command(self, command: str) -> None:
@@ -158,7 +158,7 @@ class ChatMessage:
 ```python
 import asyncio
 import websockets
-from chatlib import ChatApp
+from chatinho import ChatApp
 
 class WSChatApp(ChatApp):
     async def on_mount(self) -> None:
