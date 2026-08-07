@@ -63,26 +63,27 @@ class DemoChat(ChatApp):
             self._fake_reply(mid, text)
     def on_command(self, command: str) -> None:
         """Bot que responde a comandos conhecidos."""
-        if command == "help":
-            self.receive_message(
-                "## Comandos disponíveis\n\n"
-                "- `/help` — mostra esta ajuda\n"
-                "- `/code` — mostra um bloco de código em Python\n"
-                "- `/reply <id> <texto>` — responde a uma mensagem"
-            )
-        elif command == "code":
-            self.receive_message(
-                "Aqui tens um exemplo com **syntax highlighting**:\n\n"
-                "```python\n"
-                "def fib(n: int) -> int:\n"
-                "    a, b = 0, 1\n"
-                "    for _ in range(n):\n"
-                "        a, b = b, a + b\n"
-                "    return a\n"
-                "```"
-            )
-        else:
-            self.receive_message(f"Comando desconhecido: `/{command}`. Tenta `/help`.")
+        match command:
+            case "help":
+                self.receive_message(
+                    "## Comandos disponíveis\n\n"
+                    "- `/help` — mostra esta ajuda\n"
+                    "- `/code` — mostra um bloco de código em Python\n"
+                    "- `/reply <id> <texto>` — responde a uma mensagem"
+                )
+            case "code":
+                self.receive_message(
+                    "Aqui tens um exemplo com **syntax highlighting**:\n\n"
+                    "```python\n"
+                    "def fib(n: int) -> int:\n"
+                    "    a, b = 0, 1\n"
+                    "    for _ in range(n):\n"
+                    "        a, b = b, a + b\n"
+                    "    return a\n"
+                    "```"
+                )
+            case _:
+                self.receive_message(f"Comando desconhecido: `/{command}`. Tenta `/help`.")
 
     def _fake_reply(self, msg_id: str, text: str) -> None:
         """Simula uma resposta do 'outro lado' à mensagem enviada."""
