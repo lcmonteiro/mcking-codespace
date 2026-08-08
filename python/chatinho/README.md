@@ -56,8 +56,10 @@ bash run.sh
 Or directly:
 
 ```bash
-python demo.py
+python examples/demo.py
 ```
+
+More demos live in the [`examples/`](examples/) folder.
 
 ### Customising the theme
 

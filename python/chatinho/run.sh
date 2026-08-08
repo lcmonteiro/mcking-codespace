@@ -9,4 +9,4 @@ if [ ! -d .venv ]; then
     bash setup.sh
 fi
 
-exec "$DIR/.venv/bin/python" "$DIR/demo.py" "$@"
+exec "$DIR/.venv/bin/python" "$DIR/examples/demo.py" "$@"
