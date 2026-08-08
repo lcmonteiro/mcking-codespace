@@ -20,7 +20,7 @@ from string import Template
 
 # Template first: the stylesheet with $placeholders for every ChatStyle field.
 _CSS_TEMPLATE = Template(
-    """\
+    """
 Screen {
     layout: vertical;
     background: $screen_bg;
