@@ -11,6 +11,9 @@ thread, or network callback to inject incoming messages.
 """
 
 import logging
+import os
+import shutil
+import subprocess
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -90,6 +93,41 @@ class ChatMessage:
     is_sent_by_me : bool = True
 
 
+def _show_keyboard_if_termux() -> None:
+    """Requests the virtual keyboard when running inside Termux.
+
+    The Termux TUI (alternate screen) sometimes doesn't get the tap/key
+    event, so the soft keyboard never opens. When the termux-api package
+    is installed we can ask for it directly:
+
+        termux-keyboard show
+
+    The call is fire-and-forget (non-blocking, best-effort).
+    """
+    if not (os.environ.get("PREFIX") and shutil.which("termux-keyboard")):
+        return
+    try:
+        subprocess.Popen(
+            ["termux-keyboard", "show"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass  # best-effort: never crash the chat over a keyboard request
+
+
+class ChatInput(Input):
+    """Input that asks Termux to show the virtual keyboard on focus.
+
+    On Android the soft keyboard often doesn't open when the TUI regains
+    focus — this makes it explicit via the termux-api (best-effort).
+    """
+
+    def _on_focus(self, event: events.Focus) -> None:
+        _show_keyboard_if_termux()
+        super()._on_focus(event)
+
+
 class ChatApp(App):
     """Terminal chat application built with Textual.
 
@@ -140,13 +178,14 @@ class ChatApp(App):
         """Create child widgets."""
         yield Container(
             TouchScrollableContainer(id="chat-log"),
-            Input(placeholder="Type a message or /command", id="input-line"),
+            ChatInput(placeholder="Type a message or /command", id="input-line"),
         )
 
     def on_mount(self) -> None:
         """Focus the input when the app starts."""
         self._app_thread_id = threading.get_ident()
         self.query_one("#input-line", Input).focus()
+        _show_keyboard_if_termux()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle user pressing Enter in the input field."""
