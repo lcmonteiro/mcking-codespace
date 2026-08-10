@@ -96,10 +96,37 @@ case "$ext" in
   py )
     need python3
     echo "🐍 $base"
-    # Usa o .venv do projeto se existir (dir do script + setup.sh cria .venv)
-    local_venv="$(dirname "$file")/.venv/bin/python"
-    if [ -x "$local_venv" ]; then
-      exec "$local_venv" "$file" "${@:2}"
+    # Procura .venv a partir do dir do script subindo até à raiz do repo.
+    # (ex: python/chatinho/examples/demo.py → python/chatinho/.venv)
+    script_dir="$(dirname "$file")"
+    search_dir="$script_dir"
+    venv_py=""
+    while [ "$search_dir" != "/" ]; do
+      if [ -x "$search_dir/.venv/bin/python" ]; then
+        venv_py="$search_dir/.venv/bin/python"
+        break
+      fi
+      [ "$search_dir" = "$(pwd)" ] && break
+      search_dir="$(dirname "$search_dir")"
+    done
+    # Sem .venv: se houver setup.sh + pyproject.toml, prepara o ambiente.
+    if [ -z "$venv_py" ]; then
+      search_dir="$script_dir"
+      while [ "$search_dir" != "/" ]; do
+        if [ -f "$search_dir/setup.sh" ] && [ -f "$search_dir/pyproject.toml" ]; then
+          echo "🐍 setup.sh encontrado em $search_dir — a preparar .venv..."
+          (cd "$search_dir" && bash setup.sh)
+          if [ -x "$search_dir/.venv/bin/python" ]; then
+            venv_py="$search_dir/.venv/bin/python"
+          fi
+          break
+        fi
+        [ "$search_dir" = "$(pwd)" ] && break
+        search_dir="$(dirname "$search_dir")"
+      done
+    fi
+    if [ -n "$venv_py" ]; then
+      exec "$venv_py" "$file" "${@:2}"
     fi
     python3 "$file" "${@:2}"
     ;;
