@@ -61,6 +61,15 @@ python examples/demo.py
 
 More demos live in the [`examples/`](examples/) folder.
 
+### Running on Termux (Android)
+
+If the on-screen keyboard doesn't appear when tapping the input box:
+
+- **Volume Down + Q** — shows/hides the virtual keyboard inside any TUI
+- Tapping the terminal screen also usually pops it up
+- Make sure you have a hardware keyboard button mapped in Termux settings
+  (`Volume Down` as the default key works best with TUIs)
+
 ### Customising the theme
 
 You can create a custom :class:`~chatinho.chat_style.ChatStyle` and pass it to ``ChatApp``:
