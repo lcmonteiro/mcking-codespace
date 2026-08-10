@@ -3,8 +3,6 @@
 Run with:  bash run.sh
 """
 
-import time
-
 from textual.app import App, ComposeResult
 from textual.containers import Container, ScrollableContainer
 from textual.widgets import Input, Markdown, Static
@@ -86,9 +84,16 @@ class DemoChat(ChatApp):
                 self.receive_message(f"Unknown command: `/{command}`. Try `/help`.")
 
     def _fake_reply(self, msg_id: str, text: str) -> None:
-        """Simulates a reply from the 'other side' to the sent message."""
-        time.sleep(0.6)
-        self.receive_message(f"Received: _{text}_", reply_to=msg_id)
+        """Simulates a reply from the 'other side' to the sent message.
+
+        Uses set_timer instead of time.sleep so the UI thread is never
+        blocked: the sent message paints immediately, and the reply lands
+        0.6s later without freezing the app.
+        """
+        self.set_timer(
+            0.6,
+            lambda: self.receive_message(f"Received: _{text}_", reply_to=msg_id),
+        )
 
 
 if __name__ == "__main__":
