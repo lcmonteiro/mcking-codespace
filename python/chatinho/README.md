@@ -63,12 +63,16 @@ More demos live in the [`examples/`](examples/) folder.
 
 ### Running on Termux (Android)
 
-If the on-screen keyboard doesn't appear when tapping the input box:
+The on-screen keyboard sometimes doesn't appear automatically when running
+full-screen TUIs. There is no API command to force it (the old
+`termux-keyboard` was never implemented in termux-api) — but these work:
 
-- **Volume Down + Q** — shows/hides the virtual keyboard inside any TUI
-- Tapping the terminal screen also usually pops it up
-- Make sure you have a hardware keyboard button mapped in Termux settings
-  (`Volume Down` as the default key works best with TUIs)
+- **Tap anywhere on the terminal screen** — Termux shows the keyboard on any
+  tap (native gesture)
+- **Navigation drawer**: swipe in from the left edge → press the `KEYBOARD`
+  button → swipe back
+- **Volume Down + Q** — toggles the keyboard, but only if "Volume keys" are
+  enabled in Termux settings (it may not work with hardware keyboards)
 
 ### Customising the theme
 
