@@ -11,6 +11,7 @@ thread, or network callback to inject incoming messages.
 """
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
@@ -120,17 +121,20 @@ class ChatApp(App):
         self.command_handler : Optional[Callable[[str], None]] = command_handler
         self.messages  : List[ChatMessage] = []
         self._next_id  : int = 1
-        self._rendered : int = 0
+        self._id_lock  : threading.Lock = threading.Lock()
         # Mapping from message id to list of reply ids (for threading)
         self._replies  : Dict[str, List[str]] = {}
         # Message selected as reply target (via click)
         self._reply_target : Optional[str] = None
         self._msg_widgets  : Dict[str, Widget] = {}
+        self._msg_index    : Dict[str, ChatMessage] = {}
         self._input_placeholder = "Type a message or /command"
         # Max number of messages rendered in the terminal (history stays complete in ``messages``)
         self.max_displayed: int = max_displayed
         # IDs of the messages currently rendered, in order
         self._rendered_msg_ids: List[str] = []
+        # Thread id of the app's main loop (set in on_mount)
+        self._app_thread_id: Optional[int] = None
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -141,6 +145,7 @@ class ChatApp(App):
 
     def on_mount(self) -> None:
         """Focus the input when the app starts."""
+        self._app_thread_id = threading.get_ident()
         self.query_one("#input-line", Input).focus()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
@@ -178,7 +183,7 @@ class ChatApp(App):
         )
         self._add_message(msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg_id := msg.id)
+            self._replies.setdefault(reply_to, []).append(msg.id)
         self.on_message_sent(msg)
         return msg.id
 
@@ -204,6 +209,9 @@ class ChatApp(App):
     ) -> str:
         """Receives a message from outside and returns its id.
 
+        Safe to call from any thread: if called off the app's main
+        thread, UI updates are marshalled via ``call_from_thread``.
+
         Args:
         text : Message content.
         reply_to : Id of a sent message this one replies to (optional).
@@ -215,7 +223,12 @@ class ChatApp(App):
             is_sent_by_me=False,
             reply_to=reply_to,
         )
-        self._add_message(msg)
+        if self._app_thread_id is None or threading.get_ident() == self._app_thread_id:
+            # App not mounted yet, or already on the app thread: direct call.
+            self._add_message(msg)
+        else:
+            # Off the app thread: marshal the UI update onto the main loop.
+            self.call_from_thread(self._add_message, msg)
         if reply_to is not None:
             self._replies.setdefault(reply_to, []).append(msg.id)
         self.on_message_received(msg)
@@ -248,8 +261,9 @@ class ChatApp(App):
     # === Internals ==================================================================
 
     def _new_id(self) -> str:
-        msg_id = f"msg-{self._next_id}"
-        self._next_id += 1
+        with self._id_lock:
+            msg_id = f"msg-{self._next_id}"
+            self._next_id += 1
         return msg_id
 
     def _add_message(self, msg: ChatMessage) -> str:
@@ -258,6 +272,7 @@ class ChatApp(App):
         # Only auto-scrolls if the user is already at the bottom (otherwise they lose their reading position)
         was_at_bottom = chat_log.scroll_offset.y >= (chat_log.max_scroll_y - 1)
         self.messages.append(msg)
+        self._msg_index[msg.id] = msg
         self._refresh_chat_log()
         if was_at_bottom:
             self._scroll_to_bottom()
@@ -294,7 +309,6 @@ class ChatApp(App):
                     chat_log.mount(self._render_message(msg))
 
         self._rendered_msg_ids = desired_ids
-        self._rendered = total
 
     def _render_message(self, msg: ChatMessage) -> Widget:
         """Render a message as a clickable container with header and body."""
@@ -377,10 +391,7 @@ class ChatApp(App):
 
     def _find_message(self, msg_id: str) -> Optional[ChatMessage]:
         """Returns the message with the given id, or None."""
-        for m in self.messages:
-            if m.id == msg_id:
-                return m
-        return None
+        return self._msg_index.get(msg_id)
 
     def _scroll_to_bottom(self) -> None:
         """Scrolls the chat log to the bottom."""

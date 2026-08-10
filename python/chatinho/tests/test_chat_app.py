@@ -4,6 +4,9 @@ The Textual app is mounted via ``App.run_test()`` so widgets (input,
 chat log) are available to the code under test.
 """
 
+import asyncio
+import threading
+
 import pytest
 from textual.widgets import Input
 
@@ -67,6 +70,32 @@ async def test_get_replies_empty_for_unknown():
     app = ChatApp()
     async with app.run_test():
         assert app.get_replies("msg-999") == []
+
+
+@pytest.mark.asyncio
+async def test_receive_message_from_other_thread():
+    """receive_message is safe to call from a worker thread."""
+    app = ChatApp()
+    async with app.run_test():
+        assert app._app_thread_id == threading.get_ident()
+        results = {}
+
+        def worker():
+            results["id"] = app.receive_message("from thread")
+
+        t = threading.Thread(target=worker)
+        t.start()
+        # call_from_thread blocks the worker until the app's event loop
+        # processes the callback — yield to the loop so it can land.
+        for _ in range(100):
+            if not t.is_alive():
+                break
+            await asyncio.sleep(0.01)
+        assert not t.is_alive()
+        assert results["id"] == "msg-1"
+        assert len(app.messages) == 1
+        assert app.messages[0].text == "from thread"
+        assert app.messages[0].is_sent_by_me is False
 
 
 @pytest.mark.asyncio
