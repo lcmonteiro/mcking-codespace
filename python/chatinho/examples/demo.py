@@ -3,11 +3,12 @@
 Run with:  bash run.sh
 """
 
-from textual.app import App, ComposeResult
-from textual.containers import Container, ScrollableContainer
-from textual.widgets import Input, Markdown, Static
+from textual.app import ComposeResult
+from textual.containers import Container
+from textual.widgets import Input
 
 from chatinho import ChatApp
+from chatinho.chat_app import TouchScrollableContainer
 
 
 class DemoChat(ChatApp):
@@ -15,7 +16,7 @@ class DemoChat(ChatApp):
 
     def compose(self) -> ComposeResult:
         yield Container(
-            ScrollableContainer(id="chat-log"),
+            TouchScrollableContainer(id="chat-log"),
             Input(placeholder="Type /help, /code, /reply <id> <text>, or a message…", id="input-line"),
         )
 
