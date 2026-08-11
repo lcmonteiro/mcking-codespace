@@ -118,7 +118,7 @@ class ChatApp(App):
         super().__init__()
         if style is not None:
             # Instance-level override: Textual reads ``self.CSS`` at mount.
-            self.CSS = style.to_css()
+            self.CSS = style.to_css()  # type: ignore[misc]
         self.command_handler : Optional[Callable[[str], None]] = command_handler
         self.messages  : List[ChatMessage] = []
         self._next_id  : int = 1
