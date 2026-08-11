@@ -1,31 +1,33 @@
-"""Demo of the chatinho library: shows markdown, code blocks, commands and replies.
+"""Demo of the chatinho library: shows markdown, code blocks, commands,
+replies and command autocomplete.
 
 Run with:  bash run.sh
 """
 
-from textual.app import ComposeResult
-from textual.containers import Container
 from textual.widgets import Input
 
 from chatinho import ChatApp
-from chatinho.chat_app import TouchScrollableContainer
+
+COMMANDS = {
+    "help": "Show available commands",
+    "code": "Show a Python code block with syntax highlighting",
+    "reply": "Reply to a message: /reply <id> <text>",
+}
 
 
 class DemoChat(ChatApp):
     """ChatApp with a simulated bot that replies to commands and messages."""
 
-    def compose(self) -> ComposeResult:
-        yield Container(
-            TouchScrollableContainer(id="chat-log"),
-            Input(placeholder="Type /help, /code, /reply <id> <text>, or a message…", id="input-line"),
-        )
+    def __init__(self) -> None:
+        super().__init__(commands=COMMANDS)
+        self._input_placeholder = "Type /help, /code, /reply <id> <text>, or a message…"
 
     def on_mount(self) -> None:
         super().on_mount()
         # Welcome message with markdown + code block
         self.receive_message(
             "Welcome to **chatinho**! 👋\n\n"
-            "You can send commands:\n"
+            "You can send commands — type `/` to see suggestions:\n"
             "- `/help` — shows this help\n"
             "- `/code` — shows an example with syntax highlighting\n\n"
             "Everything you type is rendered as Markdown."
