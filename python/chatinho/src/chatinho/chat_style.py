@@ -39,9 +39,23 @@ Screen {
     background: $scrollbar_hover_bg;
     color: $scrollbar_hover_color;
 }
+#input-area {
+    dock: bottom;
+    height: auto;
+}
+#command-suggestions {
+    display: none;
+    height: auto;
+    max-height: 8;
+    background: $input_bg;
+    border: round $input_border;
+    color: $input_color;
+}
+#command-suggestions.-visible {
+    display: block;
+}
 #input-line {
     height: 3;
-    dock: bottom;
     background: $input_bg;
     border: round $input_border;
     color: $input_color;

@@ -6,6 +6,7 @@ A simple, extensible chat client library built on [Textual](https://textual.text
 
 - **Message Display**: Render messages with Markdown support and syntax highlighting for code blocks.
 - **Command Handling**: Built-in support for commands prefixed with `/` (e.g., `/help`, `/code`).
+- **Command Autocomplete**: Register known commands and get a dropdown of matching suggestions as the user types `/`; Tab/Enter completes, arrows navigate, Escape dismisses.
 - **Reply Threading**: Click any message to set it as the reply target; outgoing messages can be tagged as replies.
 - **In-Memory History**: Full message history retained; sliding window limits rendered messages for performance.
 - **Transport Agnostic**: Library does not dictate how messages are sent/received—use `send_message`, `send_command`, and `receive_message` to hook into any backend (WebSocket, HTTP, custom protocols, etc.).
@@ -99,6 +100,26 @@ if __name__ == "__main__":
     MyChatApp(style=custom_style).run()
 ```
 
+### Command autocomplete
+
+Pass a `commands` mapping (name → short description) to get a dropdown of
+matching commands as the user types `/`:
+
+```python
+from chatinho import ChatApp
+
+app = ChatApp(commands={
+    "help": "Show available commands",
+    "time": "Show the current time",
+})
+app.run()
+```
+
+- **Down/Up** move the highlight.
+- **Tab** or **Enter** completes the input with the highlighted command (Enter does *not* submit while a suggestion is showing).
+- **Escape** dismisses the popup without changing the input.
+- Typing a command that isn't in `commands` still works as normal — the list is advisory only, it doesn't restrict what can be sent.
+
 ### Embedding in Your Own Application
 
 ```python
@@ -140,12 +161,14 @@ ChatApp(
     command_handler: Optional[Callable[[str], None]] = None,
     max_displayed: int = 100,
     style: Optional[ChatStyle] = None,
+    commands: Optional[Dict[str, str]] = None,
 )
 ```
 
 - `command_handler`: Optional function called when a command is received (if not overridden).
 - `max_displayed`: Maximum number of messages to render in the viewport (older messages stay in history).
 - `style`: Optional `ChatStyle` used to customise the theme programmatically (see [Customising the theme](#customising-the-theme)).
+- `commands`: Optional mapping of command name (without `/`) to a short description, used to populate the autocomplete popup (see [Command autocomplete](#command-autocomplete)).
 
 #### Lifecycle Hooks (Override in Subclass)
 
