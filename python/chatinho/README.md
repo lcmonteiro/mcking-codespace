@@ -139,11 +139,13 @@ Main application class. Subclass to customize behavior.
 ChatApp(
     command_handler: Optional[Callable[[str], None]] = None,
     max_displayed: int = 100,
+    style: Optional[ChatStyle] = None,
 )
 ```
 
 - `command_handler`: Optional function called when a command is received (if not overridden).
 - `max_displayed`: Maximum number of messages to render in the viewport (older messages stay in history).
+- `style`: Optional `ChatStyle` used to customise the theme programmatically (see [Customising the theme](#customising-the-theme)).
 
 #### Lifecycle Hooks (Override in Subclass)
 
@@ -197,6 +199,7 @@ class ChatMessage:
 
 ```python
 import asyncio
+import json
 import websockets
 from chatinho import ChatApp
 
@@ -209,14 +212,13 @@ class WSChatApp(ChatApp):
     async def _listen_ws(self):
         async for message in self.websocket:
             # Assume incoming JSON: {"text": "...", "reply_to": "msg-123"}
-            data = eval(message)  # In production, use json.loads safely
+            data = json.loads(message)
             self.receive_message(data["text"], reply_to=data.get("reply_to"))
 
     def on_message_sent(self, msg):
         # Outgoing: send to server
-        asyncio.create_task(self.websocket.send(
-            f'{{"text": "{msg.text}", "reply_to": {msg.reply_to or "null"}}'
-        ))
+        payload = json.dumps({"text": msg.text, "reply_to": msg.reply_to})
+        asyncio.create_task(self.websocket.send(payload))
 
 if __name__ == "__main__":
     WSChatApp().run()

@@ -76,6 +76,7 @@ class _MessageContainer(Horizontal):
 
     def on_click(self, event: events.Click) -> None:
         self._on_select(self.msg_id)
+        event.stop()
 
 
 @dataclass
@@ -124,6 +125,7 @@ class ChatApp(App):
         self._id_lock  : threading.Lock = threading.Lock()
         # Mapping from message id to list of reply ids (for threading)
         self._replies  : Dict[str, List[str]] = {}
+        self._replies_lock : threading.Lock = threading.Lock()
         # Message selected as reply target (via click)
         self._reply_target : Optional[str] = None
         self._msg_widgets  : Dict[str, Widget] = {}
@@ -140,7 +142,7 @@ class ChatApp(App):
         """Create child widgets."""
         yield Container(
             TouchScrollableContainer(id="chat-log"),
-            Input(placeholder="Type a message or /command", id="input-line"),
+            Input(placeholder=self._input_placeholder, id="input-line"),
         )
 
     def on_mount(self) -> None:
@@ -183,7 +185,7 @@ class ChatApp(App):
         )
         self._add_message(msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg.id)
+            self._record_reply(reply_to, msg.id)
         self.on_message_sent(msg)
         return msg.id
 
@@ -230,13 +232,19 @@ class ChatApp(App):
             # Off the app thread: marshal the UI update onto the main loop.
             self.call_from_thread(self._add_message, msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg.id)
+            self._record_reply(reply_to, msg.id)
         self.on_message_received(msg)
         return msg.id
 
     def get_replies(self, msg_id: str) -> List[str]:
         """Returns the ids of the messages that reply to *msg_id*."""
-        return list(self._replies.get(msg_id, []))
+        with self._replies_lock:
+            return list(self._replies.get(msg_id, []))
+
+    def _record_reply(self, reply_to: str, msg_id: str) -> None:
+        """Thread-safely records that *msg_id* replies to *reply_to*."""
+        with self._replies_lock:
+            self._replies.setdefault(reply_to, []).append(msg_id)
 
     # === Hooks (callbacks — all start with ``on_``) ==============================
 
