@@ -7,14 +7,16 @@ Features:
 - Simple in-memory message history.
 
 The library is transport-agnostic: call ``receive_message`` from a worker,
-thread, or network callback to inject incoming messages.
+thread, or network callback to inject incoming messages — or attach a
+:class:`~chatinho.connectors.HistoryConnector` / :class:`~chatinho.connectors.TransportConnector`
+via ``connect_history()`` / ``connect_transport()`` to automate it.
 """
 
 import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Dict, List, Optional, Tuple, cast
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -25,6 +27,7 @@ from textual.widgets import Input, Markdown, OptionList, Static
 from textual.widgets.option_list import Option
 
 from .chat_style import ChatStyle
+from .connectors import HistoryConnector, TransportConnector
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +146,10 @@ class ChatApp(App):
         self._rendered_msg_ids: List[str] = []
         # Thread id of the app's main loop (set in on_mount)
         self._app_thread_id: Optional[int] = None
+        # Connectors — attach via connect_history()/connect_transport().
+        self._history: Optional[HistoryConnector] = None
+        self._transport: Optional[TransportConnector] = None
+        self._mounted: bool = False
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -156,9 +163,19 @@ class ChatApp(App):
         )
 
     def on_mount(self) -> None:
-        """Focus the input when the app starts."""
+        """Load history, start the transport, and focus the input."""
         self._app_thread_id = threading.get_ident()
+        self._mounted = True
+        if self._history is not None:
+            self._load_history()
+        if self._transport is not None:
+            self._transport.start(self._on_transport_receive)
         self.query_one("#input-line", Input).focus()
+
+    def on_unmount(self) -> None:
+        """Stop the transport when the app shuts down."""
+        if self._transport is not None:
+            self._transport.stop()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle user pressing Enter in the input field."""
@@ -202,6 +219,8 @@ class ChatApp(App):
         self._add_message(msg)
         if reply_to is not None:
             self._record_reply(reply_to, msg.id)
+        if self._transport is not None:
+            self._transport.send(msg)
         self.on_message_sent(msg)
         return msg.id
 
@@ -215,6 +234,8 @@ class ChatApp(App):
             is_sent_by_me=True,
         )
         self._add_message(msg)
+        if self._transport is not None:
+            self._transport.send(msg)
         self.on_command(command)
         self.on_message_sent(msg)
         return msg.id
@@ -262,6 +283,75 @@ class ChatApp(App):
         with self._replies_lock:
             self._replies.setdefault(reply_to, []).append(msg_id)
 
+    # === Connectors ==================================================================
+
+    def connect_history(
+        self, connector: Union[HistoryConnector, Type[HistoryConnector]]
+    ) -> Union[HistoryConnector, Type[HistoryConnector]]:
+        """Attaches a :class:`~chatinho.connectors.HistoryConnector`.
+
+        Works as a decorator on a zero-argument connector class, or as
+        a plain call with an already-built instance::
+
+            @app.connect_history
+            class History(JsonlHistoryConnector):
+                def __init__(self):
+                    super().__init__("chat.jsonl")
+
+            # or, when the connector needs constructor arguments:
+            app.connect_history(JsonlHistoryConnector("chat.jsonl"))
+
+        Loads history immediately if the app is already mounted,
+        otherwise it is loaded during ``on_mount``.
+        """
+        instance = connector() if isinstance(connector, type) else connector
+        self._history = instance
+        if self._mounted:
+            self._load_history()
+        return connector
+
+    def connect_transport(
+        self, connector: Union[TransportConnector, Type[TransportConnector]]
+    ) -> Union[TransportConnector, Type[TransportConnector]]:
+        """Attaches a :class:`~chatinho.connectors.TransportConnector`.
+
+        Works as a decorator on a zero-argument connector class, or as
+        a plain call with an already-built instance (see
+        :meth:`connect_history` for the same pattern). Starts the
+        transport immediately if the app is already mounted, otherwise
+        it is started during ``on_mount``.
+        """
+        instance = connector() if isinstance(connector, type) else connector
+        self._transport = instance
+        if self._mounted:
+            instance.start(self._on_transport_receive)
+        return connector
+
+    def _on_transport_receive(self, text: str, reply_to: Optional[str] = None) -> None:
+        """Wired to the transport connector's ``on_receive`` callback."""
+        self.receive_message(text, reply_to=reply_to)
+
+    def _load_history(self) -> None:
+        """Loads past messages from the history connector into ``self.messages``."""
+        assert self._history is not None
+        for msg in self._history.load():
+            self.messages.append(msg)
+            self._msg_index[msg.id] = msg
+            if msg.reply_to is not None:
+                self._replies.setdefault(msg.reply_to, []).append(msg.id)
+            self._bump_next_id(msg.id)
+        if self.messages:
+            self._refresh_chat_log()
+            self._scroll_to_bottom()
+
+    def _bump_next_id(self, msg_id: str) -> None:
+        """Keeps auto-generated ids past the highest id seen in loaded history."""
+        prefix = "msg-"
+        suffix = msg_id[len(prefix):]
+        if msg_id.startswith(prefix) and suffix.isdigit():
+            with self._id_lock:
+                self._next_id = max(self._next_id, int(suffix) + 1)
+
     # === Hooks (callbacks — all start with ``on_``) ==============================
 
     def on_command(self, command: str) -> None:
@@ -300,6 +390,8 @@ class ChatApp(App):
         self._refresh_chat_log()
         if was_at_bottom:
             self._scroll_to_bottom()
+        if self._history is not None:
+            self._history.save(msg)
         return msg.id
 
     def _refresh_chat_log(self) -> None:

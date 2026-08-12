@@ -9,7 +9,7 @@ A simple, extensible chat client library built on [Textual](https://textual.text
 - **Command Autocomplete**: Register known commands and get a dropdown of matching suggestions as the user types `/`; Tab/Enter completes, arrows navigate, Escape dismisses.
 - **Reply Threading**: Click any message to set it as the reply target; outgoing messages can be tagged as replies.
 - **In-Memory History**: Full message history retained; sliding window limits rendered messages for performance.
-- **Transport Agnostic**: Library does not dictate how messages are sent/received—use `send_message`, `send_command`, and `receive_message` to hook into any backend (WebSocket, HTTP, custom protocols, etc.).
+- **Transport Agnostic**: Library does not dictate how messages are sent/received—use `send_message`, `send_command`, and `receive_message` to hook into any backend (WebSocket, HTTP, custom protocols, etc.), or attach a `TransportConnector`/`HistoryConnector` (see [Connectors](#connectors)) to automate it.
 - **Customizable UI**: Clean, readable theme with clear visual distinction between sent and received messages.
 - **Extensible Design**: Override lifecycle hooks (`on_command`, `on_message_sent`, `on_message_received`) to inject custom logic.
 
@@ -120,6 +120,55 @@ app.run()
 - **Escape** dismisses the popup without changing the input.
 - Typing a command that isn't in `commands` still works as normal — the list is advisory only, it doesn't restrict what can be sent.
 
+### Connectors
+
+Connectors are pluggable backends, of two independent kinds:
+
+- **`HistoryConnector`** — loads past messages when the app starts, and persists every message (sent or received) as it happens. Point it at a JSON file, a database, a REST API — whatever.
+- **`TransportConnector`** — sends outgoing messages and delivers incoming ones into the running app. Point it at a WebSocket, MQTT, a message queue — whatever.
+
+Attach one with `app.connect_history(...)` / `app.connect_transport(...)`. Both work as a decorator on a zero-argument connector class, or as a plain call with an already-built instance:
+
+```python
+from chatinho import ChatApp, JsonlHistoryConnector, CallbackTransportConnector
+
+app = ChatApp()
+
+# HistoryConnector: a ready-to-use one is included (JSON Lines file).
+app.connect_history(JsonlHistoryConnector("chat.jsonl"))
+
+# TransportConnector: wrap your own send function; push() delivers
+# incoming messages from wherever your network code receives them.
+transport = CallbackTransportConnector(send_fn=lambda msg: my_socket.send(msg.text))
+app.connect_transport(transport)
+
+# ... from your own receive loop, whenever a message arrives:
+# transport.push(incoming_text, reply_to=maybe_id)
+
+app.run()
+```
+
+Or subclass directly and use `connect_*` as a decorator (handy when the connector needs no constructor arguments):
+
+```python
+from chatinho import ChatApp, HistoryConnector
+
+app = ChatApp()
+
+@app.connect_history
+class Recorder(HistoryConnector):
+    def load(self):
+        return []  # e.g. query a database
+
+    def save(self, message):
+        print(f"[{message.id}] {message.text}")
+```
+
+- `HistoryConnector.load()` is called once, in `on_mount`, and its messages are inserted before anything is rendered — new ids keep counting up from the highest one seen, so sending a new message afterwards never collides.
+- `HistoryConnector.save()` runs on the app's UI thread right after every message is added (sent or received) — keep it fast, or hand slow I/O off to a background thread/queue yourself.
+- `TransportConnector.start()` is called in `on_mount` and `TransportConnector.stop()` in `on_unmount`; `send()` is called automatically for every message you send (not for ones you receive — no echo).
+- Attaching a connector *after* the app is already mounted (e.g. from inside `on_mount` itself, or later) loads/starts it immediately instead of waiting.
+
 ### Embedding in Your Own Application
 
 ```python
@@ -192,6 +241,12 @@ ChatApp(
 
 - `send_pending_reply(text: str) -> Optional[str]`  
   Send `text` as a reply to the currently selected message (via click). Clears the selection. Returns the sent message ID, or `None` if no target selected.
+
+- `connect_history(connector: Union[HistoryConnector, Type[HistoryConnector]])`  
+  Attaches a `HistoryConnector` (decorator-compatible; see [Connectors](#connectors)).
+
+- `connect_transport(connector: Union[TransportConnector, Type[TransportConnector]])`  
+  Attaches a `TransportConnector` (decorator-compatible; see [Connectors](#connectors)).
 
 #### Internal Details
 
