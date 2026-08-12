@@ -294,3 +294,105 @@ def test_callback_transport_stop_clears_receiver():
     transport.stop()
     transport.push("two")
     assert received == ["one"]
+
+
+# === Connector lifecycle hooks ======================================================
+# on_history_loaded / on_history_saved / on_transport_started / on_transport_stopped
+
+
+class HookRecorder(ChatApp):
+    """ChatApp whose connector hooks record (kind, payload) into ``self.calls``."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.calls = []
+
+    def on_history_loaded(self, messages):
+        self.calls.append(("history_loaded", messages))
+
+    def on_history_saved(self, msg):
+        self.calls.append(("history_saved", msg))
+
+    def on_transport_started(self):
+        self.calls.append(("transport_started", None))
+
+    def on_transport_stopped(self):
+        self.calls.append(("transport_stopped", None))
+
+
+@pytest.mark.asyncio
+async def test_on_history_loaded_fires_with_loaded_messages():
+    seed = ChatApp()
+    async with seed.run_test():
+        seed.send_message("hi")
+    history = MemoryHistory(initial=list(seed.messages))
+
+    app = HookRecorder()
+    app.connect_history(history)
+    async with app.run_test():
+        pass
+    loaded_calls = [payload for kind, payload in app.calls if kind == "history_loaded"]
+    assert len(loaded_calls) == 1
+    assert [m.text for m in loaded_calls[0]] == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_on_history_loaded_fires_even_with_no_past_messages():
+    app = HookRecorder()
+    app.connect_history(MemoryHistory())
+    async with app.run_test():
+        pass
+    assert ("history_loaded", []) in app.calls
+
+
+@pytest.mark.asyncio
+async def test_on_history_saved_fires_for_sent_and_received_not_for_loaded():
+    seed = ChatApp()
+    async with seed.run_test():
+        seed.send_message("old one")
+    history = MemoryHistory(initial=list(seed.messages))
+
+    app = HookRecorder()
+    app.connect_history(history)
+    async with app.run_test():
+        app.send_message("new one")
+        app.receive_message("incoming")
+    saved_texts = [msg.text for kind, msg in app.calls if kind == "history_saved"]
+    assert saved_texts == ["new one", "incoming"]  # not "old one" (that was loaded)
+
+
+@pytest.mark.asyncio
+async def test_on_transport_started_fires_on_mount():
+    transport = CallbackTransportConnector(send_fn=lambda msg: None)
+    app = HookRecorder()
+    app.connect_transport(transport)
+    async with app.run_test():
+        assert ("transport_started", None) in app.calls
+        assert app.calls.count(("transport_started", None)) == 1
+
+
+@pytest.mark.asyncio
+async def test_on_transport_started_fires_on_late_attachment():
+    transport = CallbackTransportConnector(send_fn=lambda msg: None)
+    app = HookRecorder()
+    async with app.run_test():
+        app.connect_transport(transport)  # after mount
+    assert ("transport_started", None) in app.calls
+
+
+@pytest.mark.asyncio
+async def test_on_transport_stopped_fires_on_unmount():
+    transport = CallbackTransportConnector(send_fn=lambda msg: None)
+    app = HookRecorder()
+    app.connect_transport(transport)
+    async with app.run_test():
+        pass
+    assert app.calls == [("transport_started", None), ("transport_stopped", None)]
+
+
+@pytest.mark.asyncio
+async def test_no_transport_stopped_without_a_transport():
+    app = HookRecorder()
+    async with app.run_test():
+        pass
+    assert app.calls == []

@@ -169,6 +169,25 @@ class Recorder(HistoryConnector):
 - `TransportConnector.start()` is called in `on_mount` and `TransportConnector.stop()` in `on_unmount`; `send()` is called automatically for every message you send (not for ones you receive — no echo).
 - Attaching a connector *after* the app is already mounted (e.g. from inside `on_mount` itself, or later) loads/starts it immediately instead of waiting.
 
+Each connector type fires its own lifecycle hooks so you can react without polling — override them in a subclass:
+
+- `on_history_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `HistoryConnector.load()` returns (even if it returned nothing).
+- `on_history_saved(msg: ChatMessage) -> None` — fires after every message persisted via `HistoryConnector.save()` (not for messages loaded from history).
+- `on_transport_started() -> None` — fires right after `TransportConnector.start()`.
+- `on_transport_stopped() -> None` — fires right after `TransportConnector.stop()`.
+
+```python
+class MyChatApp(ChatApp):
+    def on_history_loaded(self, messages):
+        self.receive_message(f"Loaded {len(messages)} past messages.")
+
+    def on_transport_started(self):
+        self.receive_message("Connected.")
+
+    def on_transport_stopped(self):
+        print("Disconnected.")
+```
+
 ### Embedding in Your Own Application
 
 ```python
@@ -224,6 +243,10 @@ ChatApp(
 - `on_command(command: str) -> None`: Called when user sends a command (without the `/` prefix).
 - `on_message_sent(msg: ChatMessage) -> None`: Called after sending a message (local echo).
 - `on_message_received(msg: ChatMessage) -> None`: Called when a message is received from outside.
+- `on_history_loaded(messages: List[ChatMessage]) -> None`: Called once after a `HistoryConnector` finishes loading (see [Connectors](#connectors)).
+- `on_history_saved(msg: ChatMessage) -> None`: Called after a message is persisted via a `HistoryConnector`.
+- `on_transport_started() -> None`: Called after a `TransportConnector` starts listening.
+- `on_transport_stopped() -> None`: Called after a `TransportConnector` stops listening.
 
 #### Public Methods
 
