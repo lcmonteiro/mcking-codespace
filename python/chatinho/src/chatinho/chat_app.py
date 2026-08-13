@@ -16,7 +16,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, cast
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -104,6 +104,31 @@ class ChatMessage:
     is_sent_by_me : bool = True
 
 
+@dataclass(frozen=True)
+class _MessageId:
+    """Structured view of chatinho's auto-generated ``msg-<seq>`` ids.
+
+    A ``HistoryConnector`` isn't required to hand back ids in this
+    scheme (e.g. a database might use UUIDs) — :meth:`parse` returns
+    ``None`` for anything that doesn't match, so callers can skip it.
+    """
+
+    seq: int
+
+    PREFIX: ClassVar[str] = "msg-"
+
+    def __str__(self) -> str:
+        return f"{self.PREFIX}{self.seq}"
+
+    @classmethod
+    def parse(cls, raw: str) -> Optional["_MessageId"]:
+        if raw.startswith(cls.PREFIX):
+            suffix = raw[len(cls.PREFIX):]
+            if suffix.isdigit():
+                return cls(int(suffix))
+        return None
+
+
 class ChatApp(App):
     """Terminal chat application built with Textual.
 
@@ -175,14 +200,13 @@ class ChatApp(App):
         if self._history is not None:
             self._load_history()
         if self._transport is not None:
-            self._start_transport(self._transport)
+            self._transport.start(self._on_transport_receive)
         self.query_one("#input-line", Input).focus()
 
     def on_unmount(self) -> None:
         """Stop the transport when the app shuts down."""
         if self._transport is not None:
             _fire(self._transport, "stop")
-            _fire(self._transport, "on_stopped")
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle user pressing Enter in the input field."""
@@ -301,11 +325,6 @@ class ChatApp(App):
         """Wired to the transport connector's ``on_receive`` callback."""
         self.receive_message(text, reply_to=reply_to)
 
-    def _start_transport(self, transport: Any) -> None:
-        """Starts *transport* and fires its optional ``on_started`` hook."""
-        transport.start(self._on_transport_receive)
-        _fire(transport, "on_started")
-
     def _load_history(self) -> None:
         """Loads past messages from the history connector into ``self.messages``."""
         assert self._history is not None
@@ -323,11 +342,10 @@ class ChatApp(App):
 
     def _bump_next_id(self, msg_id: str) -> None:
         """Keeps auto-generated ids past the highest id seen in loaded history."""
-        prefix = "msg-"
-        suffix = msg_id[len(prefix):]
-        if msg_id.startswith(prefix) and suffix.isdigit():
+        parsed = _MessageId.parse(msg_id)
+        if parsed is not None:
             with self._id_lock:
-                self._next_id = max(self._next_id, int(suffix) + 1)
+                self._next_id = max(self._next_id, parsed.seq + 1)
 
     # === Hooks (callbacks — all start with ``on_``) ==============================
 
@@ -353,9 +371,9 @@ class ChatApp(App):
 
     def _new_id(self) -> str:
         with self._id_lock:
-            msg_id = f"msg-{self._next_id}"
+            msg_id = _MessageId(self._next_id)
             self._next_id += 1
-        return msg_id
+        return str(msg_id)
 
     def _add_message(self, msg: ChatMessage) -> str:
         """Adds a message to the history and re-renders the log."""

@@ -4,9 +4,14 @@ No base class to subclass — a connector is any object with the right
 methods:
 
 - History connector: needs ``load()`` and ``save(message)``. Owns
-  optional ``on_loaded``/``on_saved`` hooks.
+  optional ``on_loaded``/``on_saved`` hooks — these mark a milestone
+  the connector can't see on its own (ChatApp applying loaded messages
+  / recording a saved one), so they earn their keep.
 - Transport connector: needs ``start(on_receive)`` and ``send(message)``.
-  Owns optional ``stop``/``on_started``/``on_stopped`` hooks.
+  Owns an optional ``stop()`` only — there's no ``on_started``/
+  ``on_stopped``, since those would fire with nothing happening in
+  between "start()/stop() ran" and "the hook fires": a connector
+  author can just put that reaction directly in start()/stop().
 
 Attach one to a ``ChatApp`` subclass with the ``@connector(...)`` class
 decorator — every instance gets it, automatically, before ``on_mount``.
@@ -20,6 +25,7 @@ import pytest
 from chatinho import (
     CallbackTransportConnector,
     ChatApp,
+    ChatMessage,
     JsonlHistoryConnector,
     connector,
     history_connector,
@@ -70,12 +76,6 @@ class MemoryTransport:
 
     def stop(self):
         self.events.append("stopped")
-
-    def on_started(self):
-        self.events.append("hook:started")
-
-    def on_stopped(self):
-        self.events.append("hook:stopped")
 
     def push(self, text, reply_to=None):
         assert self._on_receive is not None
@@ -163,6 +163,41 @@ async def test_new_ids_continue_after_loaded_history():
     assert new_id == "msg-3"
 
 
+@pytest.mark.asyncio
+async def test_non_standard_history_ids_are_ignored_for_id_continuation():
+    """A connector backed by e.g. a database may hand back non-'msg-N' ids."""
+    foreign = ChatMessage(id="uuid-abc-123", text="from elsewhere")
+    history = MemoryHistory(initial=[foreign])
+
+    @connector(history)
+    class App(ChatApp):
+        pass
+
+    async with App().run_test() as pilot:
+        app = pilot.app
+        assert app.messages[0].id == "uuid-abc-123"  # preserved as-is
+        new_id = app.send_message("hi")
+    assert new_id == "msg-1"  # foreign id didn't perturb the counter
+
+
+@pytest.mark.asyncio
+async def test_id_continuation_survives_a_mix_of_standard_and_foreign_ids():
+    mixed = [
+        ChatMessage(id="msg-5", text="a"),
+        ChatMessage(id="uuid-xyz", text="b"),
+        ChatMessage(id="msg-2", text="c"),  # lower than msg-5: must not regress the counter
+    ]
+    history = MemoryHistory(initial=mixed)
+
+    @connector(history)
+    class App(ChatApp):
+        pass
+
+    async with App().run_test() as pilot:
+        new_id = pilot.app.send_message("hi")
+    assert new_id == "msg-6"
+
+
 # === Transport connector: wiring via @connector =====================================
 
 
@@ -232,7 +267,58 @@ async def test_transport_stopped_on_unmount():
 
     async with App().run_test():
         pass
-    assert transport.events == ["started", "hook:started", "stopped", "hook:stopped"]
+    assert transport.events == ["started", "stopped"]
+
+
+@pytest.mark.asyncio
+async def test_transport_stop_is_optional():
+    """A transport connector with no stop() must not crash on_unmount."""
+
+    @transport_connector
+    class NoStop:
+        def start(self, on_receive):
+            pass
+
+        def send(self, message):
+            pass
+
+    @connector(NoStop)
+    class App(ChatApp):
+        pass
+
+    async with App().run_test():
+        pass  # unmounting must not raise
+
+
+@pytest.mark.asyncio
+async def test_on_started_and_on_stopped_are_never_called():
+    """There's no on_started/on_stopped hook — start()/stop() are the whole story."""
+    calls = []
+
+    @transport_connector
+    class Recorder:
+        def start(self, on_receive):
+            calls.append("start")
+
+        def send(self, message):
+            pass
+
+        def stop(self):
+            calls.append("stop")
+
+        def on_started(self):
+            calls.append("on_started")  # defined, but ChatApp must never call it
+
+        def on_stopped(self):
+            calls.append("on_stopped")  # defined, but ChatApp must never call it
+
+    @connector(Recorder)
+    class App(ChatApp):
+        pass
+
+    async with App().run_test():
+        pass
+    assert calls == ["start", "stop"]
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ import pytest
 from textual.widgets import Input
 
 from chatinho import ChatApp
+from chatinho.chat_app import _MessageId
 
 
 @pytest.mark.asyncio
@@ -19,6 +20,19 @@ async def test_new_id_increments():
     async with app.run_test():
         assert app._new_id() == "msg-1"
         assert app._new_id() == "msg-2"
+
+
+def test_message_id_str_and_parse_round_trip():
+    assert str(_MessageId(1)) == "msg-1"
+    assert _MessageId.parse("msg-1") == _MessageId(1)
+    assert _MessageId.parse("msg-42") == _MessageId(42)
+
+
+def test_message_id_parse_rejects_non_matching_strings():
+    assert _MessageId.parse("uuid-abc-123") is None
+    assert _MessageId.parse("msg-") is None
+    assert _MessageId.parse("msg-abc") is None
+    assert _MessageId.parse("other-1") is None
 
 
 @pytest.mark.asyncio

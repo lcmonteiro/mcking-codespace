@@ -140,7 +140,7 @@ class MyApp(ChatApp):
 MyApp().run()
 ```
 
-Each connector type owns its own optional lifecycle hooks — override them on your connector, not on `ChatApp`. Subclass a reference implementation to add them:
+A history connector owns two optional lifecycle hooks — override them on your connector, not on `ChatApp`. Subclass a reference implementation to add them:
 
 ```python
 from chatinho import ChatApp, JsonlHistoryConnector, connector
@@ -157,10 +157,10 @@ class MyApp(ChatApp):
     pass
 ```
 
-- `on_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `load()` returns (even if it returned nothing).
-- `on_saved(message: ChatMessage) -> None` — fires after every message persisted via `save()` (not for messages loaded from history).
-- `on_started() -> None` (transport) — fires right after `start()`.
-- `on_stopped() -> None` (transport) — fires right after `stop()`.
+- `on_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `load()` returns (even if it returned nothing). It's a real hook (not just "call it yourself inside `load()`") because it fires *after* `ChatApp` has already inserted the messages and rendered them — something `load()` itself can't see.
+- `on_saved(message: ChatMessage) -> None` — fires after every message persisted via `save()` (not for messages loaded from history), once `ChatApp` has recorded it in its own history.
+
+A transport connector doesn't get an equivalent `on_started`/`on_stopped` — nothing happens between `start()`/`stop()` running and such a hook firing, so there'd be nothing it could tell you that you couldn't just put directly in `start()`/`stop()`.
 
 Stack `@connector(...)` to attach more than one:
 
@@ -254,7 +254,7 @@ ChatApp(
 - `on_message_sent(msg: ChatMessage) -> None`: Called after sending a message (local echo).
 - `on_message_received(msg: ChatMessage) -> None`: Called when a message is received from outside.
 
-Connector lifecycle hooks (`on_loaded`, `on_saved`, `on_started`, `on_stopped`) belong to the connector classes themselves, not to `ChatApp` — see [Connectors](#connectors).
+A history connector's `on_loaded`/`on_saved` lifecycle hooks belong to the connector class itself, not to `ChatApp` — see [Connectors](#connectors).
 
 #### Public Methods
 

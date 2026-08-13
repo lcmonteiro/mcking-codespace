@@ -6,8 +6,7 @@ methods:
 - **History connector**: needs ``load()`` and ``save(message)``.
   Optional ``on_loaded(messages)`` / ``on_saved(message)`` hooks.
 - **Transport connector**: needs ``start(on_receive)`` and
-  ``send(message)``. Optional ``stop()`` / ``on_started()`` /
-  ``on_stopped()`` hooks.
+  ``send(message)``. Optional ``stop()``.
 
 ``@history_connector`` / ``@transport_connector`` validate a class has
 the required methods, failing loudly at class-definition time if not.

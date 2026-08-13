@@ -10,8 +10,7 @@ methods, matching one of two roles:
   hooks.
 - **Transport connector** — ``start(on_receive)`` begins listening,
   ``send(message)`` sends outgoing messages. Point one at a WebSocket,
-  MQTT, a message queue, whatever. Optional ``stop()`` /
-  ``on_started()`` / ``on_stopped()`` hooks.
+  MQTT, a message queue, whatever. Optional ``stop()``.
 
 Declare a connector on a ``ChatApp`` subclass with the ``@connector(...)``
 class decorator — every instance gets it, automatically, before
