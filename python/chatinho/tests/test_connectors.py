@@ -3,13 +3,16 @@
 Two independent connector types:
 
 - ``HistoryConnector`` — loads past messages on startup, saves every
-  message (sent or received) as it happens.
+  message (sent or received) as it happens. Owns ``on_loaded``/
+  ``on_saved`` hooks.
 - ``TransportConnector`` — sends outgoing messages, delivers incoming
-  ones into the running app.
+  ones into the running app. Owns ``on_started``/``on_stopped`` hooks.
 
-Both attach via ``app.connect_history()`` / ``app.connect_transport()``,
-usable either as a decorator on a zero-argument connector class or as a
-plain call with an already-built instance.
+Both attach via ``app.connect_history()`` / ``app.connect_transport()``
+(decorator-compatible), or declaratively via the ``@connector(...)``
+class decorator on a ``ChatApp`` subclass. A connector class doesn't
+need to subclass the ABC explicitly — ``@history_connector`` /
+``@transport_connector`` mark a plain class instead.
 """
 
 import pytest
@@ -20,21 +23,61 @@ from chatinho import (
     HistoryConnector,
     JsonlHistoryConnector,
     TransportConnector,
+    connector,
+    history_connector,
+    transport_connector,
 )
 
 
 class MemoryHistory(HistoryConnector):
-    """In-memory HistoryConnector for tests: records every save() call."""
+    """In-memory HistoryConnector for tests: records save()/hook calls."""
 
     def __init__(self, initial=None):
         self._initial = list(initial or [])
         self.saved = []
+        self.loaded_calls = []
+        self.saved_hook_calls = []
 
     def load(self):
         return list(self._initial)
 
     def save(self, message):
         self.saved.append(message)
+
+    def on_loaded(self, messages):
+        self.loaded_calls.append(messages)
+
+    def on_saved(self, message):
+        self.saved_hook_calls.append(message)
+
+
+class MemoryTransport(TransportConnector):
+    """In-memory TransportConnector for tests: records calls/hooks."""
+
+    def __init__(self):
+        self.sent = []
+        self.events = []
+        self._on_receive = None
+
+    def start(self, on_receive):
+        self._on_receive = on_receive
+        self.events.append("started")
+
+    def send(self, message):
+        self.sent.append(message)
+
+    def stop(self):
+        self.events.append("stopped")
+
+    def on_started(self):
+        self.events.append("hook:started")
+
+    def on_stopped(self):
+        self.events.append("hook:stopped")
+
+    def push(self, text, reply_to=None):
+        assert self._on_receive is not None
+        self._on_receive(text, reply_to)
 
 
 # === HistoryConnector: wiring ======================================================
@@ -140,19 +183,11 @@ async def test_late_history_attachment_after_mount_loads_immediately():
 
 @pytest.mark.asyncio
 async def test_connect_transport_starts_on_mount():
-    started = []
-
-    class Recorder(TransportConnector):
-        def start(self, on_receive):
-            started.append(True)
-
-        def send(self, message):
-            pass
-
+    transport = MemoryTransport()
     app = ChatApp()
-    app.connect_transport(Recorder())
+    app.connect_transport(transport)
     async with app.run_test():
-        assert started == [True]
+        assert "started" in transport.events
 
 
 @pytest.mark.asyncio
@@ -214,40 +249,281 @@ async def test_connect_transport_as_decorator_on_class():
 
 @pytest.mark.asyncio
 async def test_late_transport_attachment_after_mount_starts_immediately():
-    events = []
-
-    class Recorder(TransportConnector):
-        def start(self, on_receive):
-            events.append("started")
-
-        def send(self, message):
-            pass
-
+    transport = MemoryTransport()
     app = ChatApp()
     async with app.run_test():
-        app.connect_transport(Recorder())  # attached after mount
-    assert events == ["started"]
+        app.connect_transport(transport)  # after mount
+    assert "started" in transport.events
 
 
 @pytest.mark.asyncio
 async def test_transport_stop_called_on_unmount():
+    transport = MemoryTransport()
+    app = ChatApp()
+    app.connect_transport(transport)
+    async with app.run_test():
+        pass
+    assert transport.events == ["started", "hook:started", "stopped", "hook:stopped"]
+
+
+# === Connector-owned lifecycle hooks (on_loaded/on_saved/on_started/on_stopped) =====
+# The hooks belong to the connector, not to ChatApp — a plain ChatApp subclass with
+# no connector-related overrides never sees them.
+
+
+@pytest.mark.asyncio
+async def test_on_loaded_fires_on_the_history_connector_with_loaded_messages():
+    seed = ChatApp()
+    async with seed.run_test():
+        seed.send_message("hi")
+    history = MemoryHistory(initial=list(seed.messages))
+
+    app = ChatApp()
+    app.connect_history(history)
+    async with app.run_test():
+        pass
+    assert len(history.loaded_calls) == 1
+    assert [m.text for m in history.loaded_calls[0]] == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_on_loaded_fires_even_with_no_past_messages():
+    history = MemoryHistory()
+    app = ChatApp()
+    app.connect_history(history)
+    async with app.run_test():
+        pass
+    assert history.loaded_calls == [[]]
+
+
+@pytest.mark.asyncio
+async def test_on_saved_fires_on_the_history_connector_not_for_loaded():
+    seed = ChatApp()
+    async with seed.run_test():
+        seed.send_message("old one")
+    history = MemoryHistory(initial=list(seed.messages))
+
+    app = ChatApp()
+    app.connect_history(history)
+    async with app.run_test():
+        app.send_message("new one")
+        app.receive_message("incoming")
+    assert [m.text for m in history.saved_hook_calls] == ["new one", "incoming"]
+
+
+@pytest.mark.asyncio
+async def test_on_started_fires_on_the_transport_connector():
+    transport = MemoryTransport()
+    app = ChatApp()
+    app.connect_transport(transport)
+    async with app.run_test():
+        assert transport.events.count("hook:started") == 1
+
+
+@pytest.mark.asyncio
+async def test_bare_chat_app_subclass_never_sees_connector_hooks():
+    """Without connect_history/connect_transport, a subclass is unaffected."""
+
+    class PlainApp(ChatApp):
+        pass
+
+    app = PlainApp()
+    async with app.run_test():
+        app.send_message("hi")  # must not raise (no connector attached)
+
+
+# === history_connector / transport_connector: duck-typed connector classes =========
+
+
+@pytest.mark.asyncio
+async def test_history_connector_decorator_makes_plain_class_a_history_connector():
+    saved = []
+
+    @history_connector
+    class Recorder:  # no explicit base class
+        def load(self):
+            return []
+
+        def save(self, message):
+            saved.append(message.text)
+
+    assert issubclass(Recorder, HistoryConnector)
+    app = ChatApp()
+    app.connect_history(Recorder())
+    async with app.run_test():
+        app.send_message("hi")
+    assert saved == ["hi"]
+
+
+def test_history_connector_decorator_is_a_noop_for_real_subclasses():
+    class Already(HistoryConnector):
+        def load(self):
+            return []
+
+        def save(self, message):
+            pass
+
+    assert history_connector(Already) is Already
+
+
+@pytest.mark.asyncio
+async def test_transport_connector_decorator_makes_plain_class_a_transport_connector():
     events = []
 
-    class Recorder(TransportConnector):
+    @transport_connector
+    class Recorder:  # no explicit base class
         def start(self, on_receive):
             events.append("started")
 
         def send(self, message):
-            pass
+            events.append(f"sent:{message.text}")
 
-        def stop(self):
-            events.append("stopped")
-
+    assert issubclass(Recorder, TransportConnector)
     app = ChatApp()
     app.connect_transport(Recorder())
     async with app.run_test():
+        app.send_message("hi")
+    assert events == ["started", "sent:hi"]
+
+
+def test_transport_connector_decorator_is_a_noop_for_real_subclasses():
+    class Already(TransportConnector):
+        def start(self, on_receive):
+            pass
+
+        def send(self, message):
+            pass
+
+    assert transport_connector(Already) is Already
+
+
+# === connector(...): declarative class decorator on a ChatApp subclass =============
+
+
+@pytest.mark.asyncio
+async def test_connector_decorator_attaches_history_class():
+    saved = []
+
+    @history_connector
+    class Recorder:
+        def load(self):
+            return []
+
+        def save(self, message):
+            saved.append(message.text)
+
+    @connector(Recorder)
+    class MyApp(ChatApp):
         pass
-    assert events == ["started", "stopped"]
+
+    app = MyApp()
+    async with app.run_test():
+        app.send_message("hi")
+    assert saved == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_connector_decorator_accepts_an_instance():
+    history = MemoryHistory()
+
+    @connector(history)
+    class MyApp(ChatApp):
+        pass
+
+    app = MyApp()
+    async with app.run_test():
+        app.send_message("hi")
+    assert [m.text for m in history.saved] == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_connector_decorator_stacks_history_and_transport():
+    history_saved = []
+    transport_sent = []
+
+    @history_connector
+    class H:
+        def load(self):
+            return []
+
+        def save(self, message):
+            history_saved.append(message.text)
+
+    @transport_connector
+    class T:
+        def start(self, on_receive):
+            pass
+
+        def send(self, message):
+            transport_sent.append(message.text)
+
+    @connector(H)
+    @connector(T)
+    class MyApp(ChatApp):
+        pass
+
+    app = MyApp()
+    async with app.run_test():
+        app.send_message("hi")
+    assert history_saved == ["hi"]
+    assert transport_sent == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_connector_decorator_accepts_multiple_connectors_at_once():
+    history_saved = []
+    transport_sent = []
+
+    @history_connector
+    class H:
+        def load(self):
+            return []
+
+        def save(self, message):
+            history_saved.append(message.text)
+
+    @transport_connector
+    class T:
+        def start(self, on_receive):
+            pass
+
+        def send(self, message):
+            transport_sent.append(message.text)
+
+    @connector(H, T)
+    class MyApp(ChatApp):
+        pass
+
+    app = MyApp()
+    async with app.run_test():
+        app.send_message("hi")
+    assert history_saved == ["hi"]
+    assert transport_sent == ["hi"]
+
+
+@pytest.mark.asyncio
+async def test_connector_decorator_preserves_constructor_arguments():
+    """@connector-decorated apps still accept ChatApp's normal constructor args."""
+    commands_seen = []
+
+    @connector(MemoryHistory())
+    class MyApp(ChatApp):
+        pass
+
+    app = MyApp(command_handler=commands_seen.append, max_displayed=5)
+    async with app.run_test():
+        app.send_command("stats")
+    assert commands_seen == ["stats"]
+    assert app.max_displayed == 5
+
+
+def test_connector_decorator_rejects_unrelated_object():
+    @connector(object())  # not a HistoryConnector or TransportConnector
+    class MyApp(ChatApp):
+        pass
+
+    with pytest.raises(TypeError):
+        MyApp()
 
 
 # === JsonlHistoryConnector (reference implementation) ==============================
@@ -273,8 +549,8 @@ async def test_jsonl_history_round_trips_messages(tmp_path):
 
 
 def test_jsonl_history_load_on_missing_file_returns_empty(tmp_path):
-    connector = JsonlHistoryConnector(tmp_path / "does-not-exist.jsonl")
-    assert connector.load() == []
+    conn = JsonlHistoryConnector(tmp_path / "does-not-exist.jsonl")
+    assert conn.load() == []
 
 
 # === CallbackTransportConnector (reference implementation) =========================
@@ -294,105 +570,3 @@ def test_callback_transport_stop_clears_receiver():
     transport.stop()
     transport.push("two")
     assert received == ["one"]
-
-
-# === Connector lifecycle hooks ======================================================
-# on_history_loaded / on_history_saved / on_transport_started / on_transport_stopped
-
-
-class HookRecorder(ChatApp):
-    """ChatApp whose connector hooks record (kind, payload) into ``self.calls``."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.calls = []
-
-    def on_history_loaded(self, messages):
-        self.calls.append(("history_loaded", messages))
-
-    def on_history_saved(self, msg):
-        self.calls.append(("history_saved", msg))
-
-    def on_transport_started(self):
-        self.calls.append(("transport_started", None))
-
-    def on_transport_stopped(self):
-        self.calls.append(("transport_stopped", None))
-
-
-@pytest.mark.asyncio
-async def test_on_history_loaded_fires_with_loaded_messages():
-    seed = ChatApp()
-    async with seed.run_test():
-        seed.send_message("hi")
-    history = MemoryHistory(initial=list(seed.messages))
-
-    app = HookRecorder()
-    app.connect_history(history)
-    async with app.run_test():
-        pass
-    loaded_calls = [payload for kind, payload in app.calls if kind == "history_loaded"]
-    assert len(loaded_calls) == 1
-    assert [m.text for m in loaded_calls[0]] == ["hi"]
-
-
-@pytest.mark.asyncio
-async def test_on_history_loaded_fires_even_with_no_past_messages():
-    app = HookRecorder()
-    app.connect_history(MemoryHistory())
-    async with app.run_test():
-        pass
-    assert ("history_loaded", []) in app.calls
-
-
-@pytest.mark.asyncio
-async def test_on_history_saved_fires_for_sent_and_received_not_for_loaded():
-    seed = ChatApp()
-    async with seed.run_test():
-        seed.send_message("old one")
-    history = MemoryHistory(initial=list(seed.messages))
-
-    app = HookRecorder()
-    app.connect_history(history)
-    async with app.run_test():
-        app.send_message("new one")
-        app.receive_message("incoming")
-    saved_texts = [msg.text for kind, msg in app.calls if kind == "history_saved"]
-    assert saved_texts == ["new one", "incoming"]  # not "old one" (that was loaded)
-
-
-@pytest.mark.asyncio
-async def test_on_transport_started_fires_on_mount():
-    transport = CallbackTransportConnector(send_fn=lambda msg: None)
-    app = HookRecorder()
-    app.connect_transport(transport)
-    async with app.run_test():
-        assert ("transport_started", None) in app.calls
-        assert app.calls.count(("transport_started", None)) == 1
-
-
-@pytest.mark.asyncio
-async def test_on_transport_started_fires_on_late_attachment():
-    transport = CallbackTransportConnector(send_fn=lambda msg: None)
-    app = HookRecorder()
-    async with app.run_test():
-        app.connect_transport(transport)  # after mount
-    assert ("transport_started", None) in app.calls
-
-
-@pytest.mark.asyncio
-async def test_on_transport_stopped_fires_on_unmount():
-    transport = CallbackTransportConnector(send_fn=lambda msg: None)
-    app = HookRecorder()
-    app.connect_transport(transport)
-    async with app.run_test():
-        pass
-    assert app.calls == [("transport_started", None), ("transport_stopped", None)]
-
-
-@pytest.mark.asyncio
-async def test_no_transport_stopped_without_a_transport():
-    app = HookRecorder()
-    async with app.run_test():
-        pass
-    assert app.calls == []

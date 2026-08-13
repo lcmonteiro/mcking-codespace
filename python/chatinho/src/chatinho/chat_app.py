@@ -176,7 +176,7 @@ class ChatApp(App):
         """Stop the transport when the app shuts down."""
         if self._transport is not None:
             self._transport.stop()
-            self.on_transport_stopped()
+            self._transport.on_stopped()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle user pressing Enter in the input field."""
@@ -333,9 +333,9 @@ class ChatApp(App):
         self.receive_message(text, reply_to=reply_to)
 
     def _start_transport(self, transport: TransportConnector) -> None:
-        """Starts *transport* and fires ``on_transport_started``."""
+        """Starts *transport* and fires its ``on_started`` hook."""
         transport.start(self._on_transport_receive)
-        self.on_transport_started()
+        transport.on_started()
 
     def _load_history(self) -> None:
         """Loads past messages from the history connector into ``self.messages``."""
@@ -350,7 +350,7 @@ class ChatApp(App):
         if self.messages:
             self._refresh_chat_log()
             self._scroll_to_bottom()
-        self.on_history_loaded(loaded)
+        self._history.on_loaded(loaded)
 
     def _bump_next_id(self, msg_id: str) -> None:
         """Keeps auto-generated ids past the highest id seen in loaded history."""
@@ -380,27 +380,6 @@ class ChatApp(App):
     def on_message_received(self, msg: ChatMessage) -> None:
         """Called after receiving a message from outside."""
 
-    def on_history_loaded(self, messages: List[ChatMessage]) -> None:
-        """Called once, right after a ``HistoryConnector`` finishes loading.
-
-        ``messages`` is what ``HistoryConnector.load()`` returned (may
-        be empty). Fires whether the connector was attached before
-        mount or later via :meth:`connect_history`.
-        """
-
-    def on_history_saved(self, msg: ChatMessage) -> None:
-        """Called right after a message is persisted via a ``HistoryConnector``.
-
-        Fires for every message added (sent or received) — not for
-        messages loaded from history.
-        """
-
-    def on_transport_started(self) -> None:
-        """Called right after a ``TransportConnector`` starts listening."""
-
-    def on_transport_stopped(self) -> None:
-        """Called right after a ``TransportConnector`` stops listening."""
-
     # === Internals ==================================================================
 
     def _new_id(self) -> str:
@@ -421,7 +400,7 @@ class ChatApp(App):
             self._scroll_to_bottom()
         if self._history is not None:
             self._history.save(msg)
-            self.on_history_saved(msg)
+            self._history.on_saved(msg)
         return msg.id
 
     def _refresh_chat_log(self) -> None:

@@ -127,7 +127,14 @@ Connectors are pluggable backends, of two independent kinds:
 - **`HistoryConnector`** — loads past messages when the app starts, and persists every message (sent or received) as it happens. Point it at a JSON file, a database, a REST API — whatever.
 - **`TransportConnector`** — sends outgoing messages and delivers incoming ones into the running app. Point it at a WebSocket, MQTT, a message queue — whatever.
 
-Attach one with `app.connect_history(...)` / `app.connect_transport(...)`. Both work as a decorator on a zero-argument connector class, or as a plain call with an already-built instance:
+Each connector type owns its own lifecycle hooks — override them on your connector, not on `ChatApp`:
+
+- `HistoryConnector.on_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `load()` returns (even if it returned nothing).
+- `HistoryConnector.on_saved(msg: ChatMessage) -> None` — fires after every message persisted via `save()` (not for messages loaded from history).
+- `TransportConnector.on_started() -> None` — fires right after `start()`.
+- `TransportConnector.on_stopped() -> None` — fires right after `stop()`.
+
+Attach a connector to a running app with `app.connect_history(...)` / `app.connect_transport(...)` — works as a decorator on a zero-argument connector class, or as a plain call with an already-built instance:
 
 ```python
 from chatinho import ChatApp, JsonlHistoryConnector, CallbackTransportConnector
@@ -148,45 +155,41 @@ app.connect_transport(transport)
 app.run()
 ```
 
-Or subclass directly and use `connect_*` as a decorator (handy when the connector needs no constructor arguments):
+Or declare connectors up front with the `@connector(...)` class decorator on a `ChatApp` subclass — stack multiple applications, or pass several connectors to one call, to attach more than one:
 
 ```python
-from chatinho import ChatApp, HistoryConnector
+from chatinho import ChatApp, JsonlHistoryConnector, connector
 
-app = ChatApp()
+@connector(JsonlHistoryConnector("chat.jsonl"))
+class MyApp(ChatApp):
+    pass
 
-@app.connect_history
-class Recorder(HistoryConnector):
+MyApp().run()  # history is attached to every instance automatically
+```
+
+A connector class doesn't need to subclass the ABC explicitly — mark a plain class with `@history_connector` / `@transport_connector` instead:
+
+```python
+from chatinho import HistoryConnector, history_connector
+
+@history_connector
+class Recorder:
     def load(self):
         return []  # e.g. query a database
 
     def save(self, message):
         print(f"[{message.id}] {message.text}")
+
+    def on_loaded(self, messages):
+        print(f"Loaded {len(messages)} past messages.")
 ```
+
+`Recorder` above is a real `HistoryConnector` (`issubclass(Recorder, HistoryConnector)` is `True`) even though it never wrote `class Recorder(HistoryConnector):` — the decorator does that for you, so `on_loaded`/`on_saved` fall back to their no-op defaults if you don't override them.
 
 - `HistoryConnector.load()` is called once, in `on_mount`, and its messages are inserted before anything is rendered — new ids keep counting up from the highest one seen, so sending a new message afterwards never collides.
 - `HistoryConnector.save()` runs on the app's UI thread right after every message is added (sent or received) — keep it fast, or hand slow I/O off to a background thread/queue yourself.
 - `TransportConnector.start()` is called in `on_mount` and `TransportConnector.stop()` in `on_unmount`; `send()` is called automatically for every message you send (not for ones you receive — no echo).
 - Attaching a connector *after* the app is already mounted (e.g. from inside `on_mount` itself, or later) loads/starts it immediately instead of waiting.
-
-Each connector type fires its own lifecycle hooks so you can react without polling — override them in a subclass:
-
-- `on_history_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `HistoryConnector.load()` returns (even if it returned nothing).
-- `on_history_saved(msg: ChatMessage) -> None` — fires after every message persisted via `HistoryConnector.save()` (not for messages loaded from history).
-- `on_transport_started() -> None` — fires right after `TransportConnector.start()`.
-- `on_transport_stopped() -> None` — fires right after `TransportConnector.stop()`.
-
-```python
-class MyChatApp(ChatApp):
-    def on_history_loaded(self, messages):
-        self.receive_message(f"Loaded {len(messages)} past messages.")
-
-    def on_transport_started(self):
-        self.receive_message("Connected.")
-
-    def on_transport_stopped(self):
-        print("Disconnected.")
-```
 
 ### Embedding in Your Own Application
 
@@ -243,10 +246,8 @@ ChatApp(
 - `on_command(command: str) -> None`: Called when user sends a command (without the `/` prefix).
 - `on_message_sent(msg: ChatMessage) -> None`: Called after sending a message (local echo).
 - `on_message_received(msg: ChatMessage) -> None`: Called when a message is received from outside.
-- `on_history_loaded(messages: List[ChatMessage]) -> None`: Called once after a `HistoryConnector` finishes loading (see [Connectors](#connectors)).
-- `on_history_saved(msg: ChatMessage) -> None`: Called after a message is persisted via a `HistoryConnector`.
-- `on_transport_started() -> None`: Called after a `TransportConnector` starts listening.
-- `on_transport_stopped() -> None`: Called after a `TransportConnector` stops listening.
+
+Connector lifecycle hooks (`on_loaded`, `on_saved`, `on_started`, `on_stopped`) belong to the connector classes themselves, not to `ChatApp` — see [Connectors](#connectors).
 
 #### Public Methods
 
