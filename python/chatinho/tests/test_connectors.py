@@ -29,10 +29,9 @@ from chatinho import (
     JsonlHistoryConnector,
     connector,
     history_connector,
-    is_history_connector,
-    is_transport_connector,
     transport_connector,
 )
+from chatinho.connectors import is_history_connector, is_transport_connector
 
 
 @history_connector
