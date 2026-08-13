@@ -1,96 +1,55 @@
-"""Connector base classes, lifecycle hooks, and attachment decorators.
+"""Connector capability checks and attachment decorators.
 
-Two independent connector types:
+No base class to subclass — a connector is any object with the right
+methods:
 
-- ``HistoryConnector`` — loads past messages when the app starts, and
-  persists every message (sent or received) as it happens.
-- ``TransportConnector`` — sends outgoing messages and delivers
-  incoming ones into the running app.
+- **History connector**: needs ``load()`` and ``save(message)``.
+  Optional ``on_loaded(messages)`` / ``on_saved(message)`` hooks.
+- **Transport connector**: needs ``start(on_receive)`` and
+  ``send(message)``. Optional ``stop()`` / ``on_started()`` /
+  ``on_stopped()`` hooks.
 
-Each connector type owns its own lifecycle hooks (``on_loaded``/
-``on_saved`` for history, ``on_started``/``on_stopped`` for transport)
-— override them on your connector subclass, not on ``ChatApp``.
-
-Three decorators tie connectors to an app:
-
-- ``history_connector`` / ``transport_connector`` — mark a plain class
-  as a connector without subclassing the ABC explicitly.
-- ``connector`` — a class decorator for a ``ChatApp`` subclass that
-  declares connectors to attach to every instance automatically,
-  before ``on_mount``. Stack multiple applications, or pass several
-  connectors to one call, to attach more than one.
+``@history_connector`` / ``@transport_connector`` validate a class has
+the required methods, failing loudly at class-definition time if not.
+``@connector(...)`` attaches a connector to a ``ChatApp`` subclass —
+every instance gets it, automatically, before ``on_mount`` — running
+the same capability check to decide whether it's a history or a
+transport connector.
 """
 
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, List, Optional, Type, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Type, TypeVar, Union
 
 if TYPE_CHECKING:
-    from ..chat_app import ChatApp, ChatMessage
+    from ..chat_app import ChatApp
 
-# Called by a TransportConnector for every message it receives from the
+# Called by a transport connector for every message it receives from the
 # outside world: (text, reply_to). Safe to call from any thread.
 ReceiveCallback = Callable[[str, Optional[str]], None]
 
 _AppT = TypeVar("_AppT", bound="ChatApp")
 
-
-class HistoryConnector(ABC):
-    """Loads past messages on startup and persists new ones as they happen."""
-
-    @abstractmethod
-    def load(self) -> List["ChatMessage"]:
-        """Returns past messages, oldest first."""
-
-    @abstractmethod
-    def save(self, message: "ChatMessage") -> None:
-        """Persists a single message (sent or received).
-
-        Called synchronously on the app's UI thread right after the
-        message is added — keep this fast, or hand slow I/O off to a
-        background thread/queue yourself.
-        """
-
-    def on_loaded(self, messages: List["ChatMessage"]) -> None:
-        """Optional hook: called once, right after :meth:`load` returns.
-
-        ``messages`` is exactly what :meth:`load` returned (may be
-        empty). Override to react — e.g. log how much history came
-        back, or show a "loaded N messages" notice.
-        """
-
-    def on_saved(self, message: "ChatMessage") -> None:
-        """Optional hook: called right after :meth:`save` persists a message."""
+_HISTORY_METHODS: Tuple[str, ...] = ("load", "save")
+_TRANSPORT_METHODS: Tuple[str, ...] = ("start", "send")
 
 
-class TransportConnector(ABC):
-    """Sends outgoing messages and delivers incoming ones."""
-
-    @abstractmethod
-    def start(self, on_receive: ReceiveCallback) -> None:
-        """Begin listening for incoming messages.
-
-        Call ``on_receive(text, reply_to)`` for each one you get from
-        the outside world — safe to call from any thread, it is
-        marshalled onto the app's UI thread automatically.
-        """
-
-    @abstractmethod
-    def send(self, message: "ChatMessage") -> None:
-        """Send an outgoing message."""
-
-    def stop(self) -> None:
-        """Stop listening and release resources. Optional to override."""
-
-    def on_started(self) -> None:
-        """Optional hook: called right after :meth:`start`."""
-
-    def on_stopped(self) -> None:
-        """Optional hook: called right after :meth:`stop`."""
+def _has_methods(obj: object, names: Tuple[str, ...]) -> bool:
+    return all(callable(getattr(obj, name, None)) for name in names)
 
 
-def history_connector(cls: type) -> Type[HistoryConnector]:
-    """Class decorator: makes *cls* a :class:`HistoryConnector` without
-    requiring explicit inheritance::
+def is_history_connector(obj: object) -> bool:
+    """Structural check: does *obj* have ``load()`` and ``save()``?"""
+    return _has_methods(obj, _HISTORY_METHODS)
+
+
+def is_transport_connector(obj: object) -> bool:
+    """Structural check: does *obj* have ``start()`` and ``send()``?"""
+    return _has_methods(obj, _TRANSPORT_METHODS)
+
+
+def history_connector(cls: type) -> type:
+    """Class decorator: validates *cls* is capable of being a history
+    connector — has ``load()`` and ``save(message)`` — raising
+    ``TypeError`` at class-definition time if not::
 
         @history_connector
         class Recorder:
@@ -99,74 +58,72 @@ def history_connector(cls: type) -> Type[HistoryConnector]:
 
             def save(self, message):
                 ...
-
-    A no-op if *cls* already subclasses ``HistoryConnector``.
     """
-    if issubclass(cls, HistoryConnector):
-        return cls
-    merged = type(cls.__name__, (cls, HistoryConnector), {})
-    merged.__module__ = cls.__module__
-    merged.__qualname__ = cls.__qualname__
-    return cast(Type[HistoryConnector], merged)
+    if not is_history_connector(cls):
+        raise TypeError(
+            f"{cls.__name__} can't be a history connector: needs load() and save()"
+        )
+    return cls
 
 
-def transport_connector(cls: type) -> Type[TransportConnector]:
-    """Class decorator: makes *cls* a :class:`TransportConnector` without
-    requiring explicit inheritance (see :func:`history_connector` for
-    the same pattern).
+def transport_connector(cls: type) -> type:
+    """Class decorator: validates *cls* is capable of being a transport
+    connector — has ``start(on_receive)`` and ``send(message)`` —
+    raising ``TypeError`` at class-definition time if not.
     """
-    if issubclass(cls, TransportConnector):
-        return cls
-    merged = type(cls.__name__, (cls, TransportConnector), {})
-    merged.__module__ = cls.__module__
-    merged.__qualname__ = cls.__qualname__
-    return cast(Type[TransportConnector], merged)
+    if not is_transport_connector(cls):
+        raise TypeError(
+            f"{cls.__name__} can't be a transport connector: needs start() and send()"
+        )
+    return cls
 
 
-ConnectorArg = Union[
-    HistoryConnector,
-    TransportConnector,
-    Type[HistoryConnector],
-    Type[TransportConnector],
-]
+ConnectorArg = Union[object, Type[object]]
 
 
-def connector(*connectors: ConnectorArg) -> Callable[[Type[_AppT]], Type[_AppT]]:
-    """Class decorator for a ``ChatApp`` subclass: declares connectors to
-    attach to every instance, automatically, before ``on_mount``::
+def connector(
+    target: ConnectorArg, *args: Any, **kwargs: Any
+) -> Callable[[Type[_AppT]], Type[_AppT]]:
+    """Class decorator for a ``ChatApp`` subclass: declares a connector to
+    attach to every instance, automatically, before ``on_mount``.
+
+    *target* may be a connector class — instantiated lazily, once per
+    app instance, with *args*/*kwargs* passed to its constructor — or
+    an already-built instance (shared across instances)::
+
+        @connector(JsonlHistoryConnector, "chat.jsonl")   # lazy: built per instance
+        class MyApp(ChatApp):
+            ...
+
+        @connector(my_transport)                           # already-built, shared
+        class MyApp(ChatApp):
+            ...
+
+    Whether it's routed to history or transport is decided by the same
+    capability check as :func:`history_connector`/:func:`transport_connector`.
+    Stack multiple applications to attach more than one connector::
 
         @connector(MyHistory)
         @connector(MyTransport)
         class MyApp(ChatApp):
             ...
-
-        # or, several at once:
-        @connector(MyHistory, MyTransport)
-        class MyApp(ChatApp):
-            ...
-
-    Each connector may be a zero-argument class (instantiated for you)
-    or an already-built instance, and is routed to
-    :meth:`~chatinho.chat_app.ChatApp.connect_history` /
-    :meth:`~chatinho.chat_app.ChatApp.connect_transport` based on its
-    type.
     """
 
     def decorate(app_cls: Type[_AppT]) -> Type[_AppT]:
         original_init: Callable[..., None] = app_cls.__init__
 
-        def __init__(self: _AppT, *args: Any, **kwargs: Any) -> None:
-            original_init(self, *args, **kwargs)
-            for conn in connectors:
-                instance = conn() if isinstance(conn, type) else conn
-                if isinstance(instance, HistoryConnector):
-                    self.connect_history(instance)
-                elif isinstance(instance, TransportConnector):
-                    self.connect_transport(instance)
-                else:
-                    raise TypeError(
-                        f"{instance!r} is not a HistoryConnector or TransportConnector"
-                    )
+        def __init__(self: _AppT, *init_args: Any, **init_kwargs: Any) -> None:
+            original_init(self, *init_args, **init_kwargs)
+            instance = target(*args, **kwargs) if isinstance(target, type) else target
+            if is_history_connector(instance):
+                self._history = instance
+            elif is_transport_connector(instance):
+                self._transport = instance
+            else:
+                raise TypeError(
+                    f"{instance!r} is not a valid connector: needs load()+save() "
+                    "(history) or start()+send() (transport)"
+                )
 
         app_cls.__init__ = __init__  # type: ignore[assignment]
         return app_cls

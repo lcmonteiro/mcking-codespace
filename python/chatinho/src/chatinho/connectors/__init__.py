@@ -1,30 +1,30 @@
 """Connectors: pluggable backends for chatinho.
 
-Two independent connector types, matching the two separate concerns of
-a chat transport:
+No base class to subclass — a connector is any object with the right
+methods, matching one of two roles:
 
-- ``HistoryConnector`` — loads past messages when the app starts, and
-  persists every message (sent or received) as it happens. Point one
-  at a JSON file, SQLite, a REST API, whatever.
-- ``TransportConnector`` — sends outgoing messages and delivers
-  incoming ones into the running app. Point one at a WebSocket, MQTT,
-  a message queue, whatever.
+- **History connector** — ``load()`` returns past messages when the
+  app starts, ``save(message)`` persists every message (sent or
+  received) as it happens. Point one at a JSON file, SQLite, a REST
+  API, whatever. Optional ``on_loaded(messages)`` / ``on_saved(message)``
+  hooks.
+- **Transport connector** — ``start(on_receive)`` begins listening,
+  ``send(message)`` sends outgoing messages. Point one at a WebSocket,
+  MQTT, a message queue, whatever. Optional ``stop()`` /
+  ``on_started()`` / ``on_stopped()`` hooks.
 
-Each connector type owns its own lifecycle hooks — override
-``on_loaded``/``on_saved`` on a ``HistoryConnector`` subclass, or
-``on_started``/``on_stopped`` on a ``TransportConnector`` subclass, to
-react without polling.
+Declare a connector on a ``ChatApp`` subclass with the ``@connector(...)``
+class decorator — every instance gets it, automatically, before
+``on_mount``::
 
-Attach a connector to an app with ``app.connect_history(...)`` /
-``app.connect_transport(...)``, or declare it upfront with the
-``@connector(...)`` class decorator::
-
-    @connector(JsonlHistoryConnector("chat.jsonl"))
+    @connector(JsonlHistoryConnector, "chat.jsonl")  # lazy: built per instance
     class MyApp(ChatApp):
         ...
 
-A connector class doesn't need to subclass the ABC explicitly — decorate
-it with ``@history_connector`` / ``@transport_connector`` instead::
+Validate a plain class is capable of the role you intend with
+``@history_connector`` / ``@transport_connector`` — they check for the
+required methods and raise ``TypeError`` at class-definition time if
+missing::
 
     @history_connector
     class Recorder:
@@ -34,30 +34,30 @@ it with ``@history_connector`` / ``@transport_connector`` instead::
         def save(self, message):
             ...
 
-This package also ships one ready-to-use implementation of each type —
+This package also ships one ready-to-use implementation of each role —
 ``JsonlHistoryConnector`` and ``CallbackTransportConnector``.
 """
 
 from .base import (
     ConnectorArg,
-    HistoryConnector,
     ReceiveCallback,
-    TransportConnector,
     connector,
     history_connector,
+    is_history_connector,
+    is_transport_connector,
     transport_connector,
 )
 from .callback_transport_connector import CallbackTransportConnector
 from .json_history_connector import JsonlHistoryConnector
 
 __all__ = [
-    "HistoryConnector",
-    "TransportConnector",
     "ReceiveCallback",
     "ConnectorArg",
     "connector",
     "history_connector",
     "transport_connector",
+    "is_history_connector",
+    "is_transport_connector",
     "JsonlHistoryConnector",
     "CallbackTransportConnector",
 ]

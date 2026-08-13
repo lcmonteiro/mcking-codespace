@@ -1,17 +1,18 @@
-"""JsonlHistoryConnector: a ready-to-use HistoryConnector."""
+"""JsonlHistoryConnector: a ready-to-use history connector."""
 
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Union
 
-from .base import HistoryConnector
+from .base import history_connector
 
 if TYPE_CHECKING:
     from ..chat_app import ChatMessage
 
 
-class JsonlHistoryConnector(HistoryConnector):
+@history_connector
+class JsonlHistoryConnector:
     """Persists messages as JSON Lines (one JSON object per line) to a file.
 
     A minimal, dependency-free reference implementation — swap it for a

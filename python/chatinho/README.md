@@ -9,7 +9,7 @@ A simple, extensible chat client library built on [Textual](https://textual.text
 - **Command Autocomplete**: Register known commands and get a dropdown of matching suggestions as the user types `/`; Tab/Enter completes, arrows navigate, Escape dismisses.
 - **Reply Threading**: Click any message to set it as the reply target; outgoing messages can be tagged as replies.
 - **In-Memory History**: Full message history retained; sliding window limits rendered messages for performance.
-- **Transport Agnostic**: Library does not dictate how messages are sent/received—use `send_message`, `send_command`, and `receive_message` to hook into any backend (WebSocket, HTTP, custom protocols, etc.), or attach a `TransportConnector`/`HistoryConnector` (see [Connectors](#connectors)) to automate it.
+- **Transport Agnostic**: Library does not dictate how messages are sent/received—use `send_message`, `send_command`, and `receive_message` to hook into any backend (WebSocket, HTTP, custom protocols, etc.), or declare a history/transport connector (see [Connectors](#connectors)) to automate it.
 - **Customizable UI**: Clean, readable theme with clear visual distinction between sent and received messages.
 - **Extensible Design**: Override lifecycle hooks (`on_command`, `on_message_sent`, `on_message_received`) to inject custom logic.
 
@@ -122,55 +122,68 @@ app.run()
 
 ### Connectors
 
-Connectors are pluggable backends, of two independent kinds:
+Connectors are pluggable backends, of two independent kinds. There's no base class to subclass — a connector is any object with the right methods:
 
-- **`HistoryConnector`** — loads past messages when the app starts, and persists every message (sent or received) as it happens. Point it at a JSON file, a database, a REST API — whatever.
-- **`TransportConnector`** — sends outgoing messages and delivers incoming ones into the running app. Point it at a WebSocket, MQTT, a message queue — whatever.
+- **History connector** — needs `load()` and `save(message)`. Loads past messages when the app starts, and persists every message (sent or received) as it happens. Point it at a JSON file, a database, a REST API — whatever.
+- **Transport connector** — needs `start(on_receive)` and `send(message)`. Sends outgoing messages and delivers incoming ones into the running app. Point it at a WebSocket, MQTT, a message queue — whatever.
 
-Each connector type owns its own lifecycle hooks — override them on your connector, not on `ChatApp`:
-
-- `HistoryConnector.on_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `load()` returns (even if it returned nothing).
-- `HistoryConnector.on_saved(msg: ChatMessage) -> None` — fires after every message persisted via `save()` (not for messages loaded from history).
-- `TransportConnector.on_started() -> None` — fires right after `start()`.
-- `TransportConnector.on_stopped() -> None` — fires right after `stop()`.
-
-Attach a connector to a running app with `app.connect_history(...)` / `app.connect_transport(...)` — works as a decorator on a zero-argument connector class, or as a plain call with an already-built instance:
-
-```python
-from chatinho import ChatApp, JsonlHistoryConnector, CallbackTransportConnector
-
-app = ChatApp()
-
-# HistoryConnector: a ready-to-use one is included (JSON Lines file).
-app.connect_history(JsonlHistoryConnector("chat.jsonl"))
-
-# TransportConnector: wrap your own send function; push() delivers
-# incoming messages from wherever your network code receives them.
-transport = CallbackTransportConnector(send_fn=lambda msg: my_socket.send(msg.text))
-app.connect_transport(transport)
-
-# ... from your own receive loop, whenever a message arrives:
-# transport.push(incoming_text, reply_to=maybe_id)
-
-app.run()
-```
-
-Or declare connectors up front with the `@connector(...)` class decorator on a `ChatApp` subclass — stack multiple applications, or pass several connectors to one call, to attach more than one:
+Attach one to a `ChatApp` subclass with the `@connector(...)` class decorator — every instance gets it, automatically, before `on_mount`. Pass a connector *class* plus its constructor arguments for lazy instantiation (a fresh connector per app instance), or an already-built instance to share:
 
 ```python
 from chatinho import ChatApp, JsonlHistoryConnector, connector
 
-@connector(JsonlHistoryConnector("chat.jsonl"))
+# Lazy: JsonlHistoryConnector("chat.jsonl") is built once per App() call.
+@connector(JsonlHistoryConnector, "chat.jsonl")
 class MyApp(ChatApp):
     pass
 
-MyApp().run()  # history is attached to every instance automatically
+MyApp().run()
 ```
 
-A connector class doesn't need to subclass the ABC explicitly — mark a plain class with `@history_connector` / `@transport_connector` instead:
+Each connector type owns its own optional lifecycle hooks — override them on your connector, not on `ChatApp`. Subclass a reference implementation to add them:
 
 ```python
-from chatinho import HistoryConnector, history_connector
+from chatinho import ChatApp, JsonlHistoryConnector, connector
+
+class LoggingHistory(JsonlHistoryConnector):
+    def on_loaded(self, messages):
+        print(f"Loaded {len(messages)} past messages.")
+
+    def on_saved(self, message):
+        print(f"Saved: {message.text}")
+
+@connector(LoggingHistory, "chat.jsonl")
+class MyApp(ChatApp):
+    pass
+```
+
+- `on_loaded(messages: List[ChatMessage]) -> None` — fires once, right after `load()` returns (even if it returned nothing).
+- `on_saved(message: ChatMessage) -> None` — fires after every message persisted via `save()` (not for messages loaded from history).
+- `on_started() -> None` (transport) — fires right after `start()`.
+- `on_stopped() -> None` (transport) — fires right after `stop()`.
+
+Stack `@connector(...)` to attach more than one:
+
+```python
+from chatinho import CallbackTransportConnector, ChatApp, JsonlHistoryConnector, connector
+
+# Wrap your own send function; push() delivers incoming messages from
+# wherever your network code receives them.
+transport = CallbackTransportConnector(send_fn=lambda msg: my_socket.send(msg.text))
+
+@connector(JsonlHistoryConnector, "chat.jsonl")
+@connector(transport)
+class MyApp(ChatApp):
+    pass
+
+# ... from your own receive loop, whenever a message arrives:
+# transport.push(incoming_text, reply_to=maybe_id)
+```
+
+A plain class doesn't need to subclass anything to be a connector — but `@history_connector` / `@transport_connector` validate it has the right methods up front, raising `TypeError` at class-definition time instead of failing later when the app tries to use it:
+
+```python
+from chatinho import history_connector
 
 @history_connector
 class Recorder:
@@ -179,17 +192,11 @@ class Recorder:
 
     def save(self, message):
         print(f"[{message.id}] {message.text}")
-
-    def on_loaded(self, messages):
-        print(f"Loaded {len(messages)} past messages.")
 ```
 
-`Recorder` above is a real `HistoryConnector` (`issubclass(Recorder, HistoryConnector)` is `True`) even though it never wrote `class Recorder(HistoryConnector):` — the decorator does that for you, so `on_loaded`/`on_saved` fall back to their no-op defaults if you don't override them.
-
-- `HistoryConnector.load()` is called once, in `on_mount`, and its messages are inserted before anything is rendered — new ids keep counting up from the highest one seen, so sending a new message afterwards never collides.
-- `HistoryConnector.save()` runs on the app's UI thread right after every message is added (sent or received) — keep it fast, or hand slow I/O off to a background thread/queue yourself.
-- `TransportConnector.start()` is called in `on_mount` and `TransportConnector.stop()` in `on_unmount`; `send()` is called automatically for every message you send (not for ones you receive — no echo).
-- Attaching a connector *after* the app is already mounted (e.g. from inside `on_mount` itself, or later) loads/starts it immediately instead of waiting.
+- `load()` is called once, in `on_mount`, and its messages are inserted before anything is rendered — new ids keep counting up from the highest one seen, so sending a new message afterwards never collides.
+- `save()` runs on the app's UI thread right after every message is added (sent or received) — keep it fast, or hand slow I/O off to a background thread/queue yourself.
+- `start()` is called in `on_mount` and `stop()` (if defined) in `on_unmount`; `send()` is called automatically for every message you send (not for ones you receive — no echo).
 
 ### Embedding in Your Own Application
 
@@ -266,11 +273,7 @@ Connector lifecycle hooks (`on_loaded`, `on_saved`, `on_started`, `on_stopped`) 
 - `send_pending_reply(text: str) -> Optional[str]`  
   Send `text` as a reply to the currently selected message (via click). Clears the selection. Returns the sent message ID, or `None` if no target selected.
 
-- `connect_history(connector: Union[HistoryConnector, Type[HistoryConnector]])`  
-  Attaches a `HistoryConnector` (decorator-compatible; see [Connectors](#connectors)).
-
-- `connect_transport(connector: Union[TransportConnector, Type[TransportConnector]])`  
-  Attaches a `TransportConnector` (decorator-compatible; see [Connectors](#connectors)).
+Connectors are attached declaratively with `@connector(...)` on a `ChatApp` subclass, not through an instance method — see [Connectors](#connectors).
 
 #### Internal Details
 

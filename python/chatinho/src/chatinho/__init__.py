@@ -14,16 +14,11 @@ Customise the theme programmatically:
     >>> from chatinho import ChatApp, ChatStyle
     >>> app = ChatApp(style=ChatStyle(accent="#ff5733"))
 
-Persist history and hook up a live transport with connectors:
-
-    >>> from chatinho import ChatApp, JsonlHistoryConnector
-    >>> app = ChatApp()
-    >>> app.connect_history(JsonlHistoryConnector("chat.jsonl"))
-
-Or declare connectors upfront with the ``@connector`` class decorator:
+Persist history by declaring a connector on your subclass — instantiated
+lazily, once per app instance:
 
     >>> from chatinho import ChatApp, JsonlHistoryConnector, connector
-    >>> @connector(JsonlHistoryConnector("chat.jsonl"))
+    >>> @connector(JsonlHistoryConnector, "chat.jsonl")
     ... class MyApp(ChatApp):
     ...     pass
 """
@@ -33,12 +28,12 @@ from .chat_style import ChatStyle
 from .connectors import (
     CallbackTransportConnector,
     ConnectorArg,
-    HistoryConnector,
     JsonlHistoryConnector,
     ReceiveCallback,
-    TransportConnector,
     connector,
     history_connector,
+    is_history_connector,
+    is_transport_connector,
     transport_connector,
 )
 
@@ -46,13 +41,13 @@ __all__ = [
     "ChatApp",
     "ChatMessage",
     "ChatStyle",
-    "HistoryConnector",
-    "TransportConnector",
     "ReceiveCallback",
     "ConnectorArg",
     "connector",
     "history_connector",
     "transport_connector",
+    "is_history_connector",
+    "is_transport_connector",
     "JsonlHistoryConnector",
     "CallbackTransportConnector",
 ]

@@ -1,21 +1,25 @@
-"""CallbackTransportConnector: a ready-to-use TransportConnector."""
+"""CallbackTransportConnector: a ready-to-use transport connector."""
 
 from typing import TYPE_CHECKING, Callable, Optional
 
-from .base import ReceiveCallback, TransportConnector
+from .base import ReceiveCallback, transport_connector
 
 if TYPE_CHECKING:
     from ..chat_app import ChatMessage
 
 
-class CallbackTransportConnector(TransportConnector):
+@transport_connector
+class CallbackTransportConnector:
     """Transport backed by two plain callables — adapt this to any real
     backend (WebSocket, MQTT, a message queue, ...) without subclassing.
 
     Example::
 
         transport = CallbackTransportConnector(send_fn=lambda msg: ws.send(msg.text))
-        app.connect_transport(transport)
+
+        @connector(transport)
+        class MyApp(ChatApp):
+            ...
 
         # From your own network callback, whenever a message arrives:
         transport.push("hello from the server")
