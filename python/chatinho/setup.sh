@@ -4,6 +4,9 @@
 # If uv is not installed, installs it automatically.
 set -euo pipefail
 
+# Operate relative to this script's directory, regardless of caller's cwd.
+cd "$(cd "$(dirname "$0")" && pwd)"
+
 echo "🐍 chatinho setup — preparing virtual environment..."
 
 # Already ready? Skip (does not require uv).

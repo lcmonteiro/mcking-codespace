@@ -14,13 +14,15 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple, cast
 
 from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, ScrollableContainer, Horizontal, Vertical
 from textual.widget import Widget
-from textual.widgets import Input, Markdown, Static
+from textual.widgets import Input, Markdown, OptionList, Static
+from textual.widgets.option_list import Option
 
 from .chat_style import ChatStyle
 
@@ -76,6 +78,7 @@ class _MessageContainer(Horizontal):
 
     def on_click(self, event: events.Click) -> None:
         self._on_select(self.msg_id)
+        event.stop()
 
 
 @dataclass
@@ -113,17 +116,22 @@ class ChatApp(App):
         command_handler: Optional[Callable[[str], None]] = None,
         max_displayed: int = 100,
         style: Optional[ChatStyle] = None,
+        commands: Optional[Dict[str, str]] = None,
     ) -> None:
         super().__init__()
         if style is not None:
             # Instance-level override: Textual reads ``self.CSS`` at mount.
-            self.CSS = style.to_css()
+            self.CSS = style.to_css()  # type: ignore[misc]
         self.command_handler : Optional[Callable[[str], None]] = command_handler
+        # Known commands (name -> short description) shown as suggestions
+        # while the user types "/name" in the input field.
+        self._commands : Dict[str, str] = dict(commands) if commands else {}
         self.messages  : List[ChatMessage] = []
         self._next_id  : int = 1
         self._id_lock  : threading.Lock = threading.Lock()
         # Mapping from message id to list of reply ids (for threading)
         self._replies  : Dict[str, List[str]] = {}
+        self._replies_lock : threading.Lock = threading.Lock()
         # Message selected as reply target (via click)
         self._reply_target : Optional[str] = None
         self._msg_widgets  : Dict[str, Widget] = {}
@@ -140,7 +148,11 @@ class ChatApp(App):
         """Create child widgets."""
         yield Container(
             TouchScrollableContainer(id="chat-log"),
-            Input(placeholder="Type a message or /command", id="input-line"),
+            Vertical(
+                OptionList(id="command-suggestions"),
+                _CommandInput(placeholder=self._input_placeholder, id="input-line"),
+                id="input-area",
+            ),
         )
 
     def on_mount(self) -> None:
@@ -165,6 +177,12 @@ class ChatApp(App):
             else:
                 self.send_message(text)
 
+    def on_input_changed(self, message: Input.Changed) -> None:
+        """Update the command-suggestion popup as the user types."""
+        if message.input.id != "input-line":
+            return
+        self._update_command_suggestions(message.value)
+
     # === Public API =================================================================
 
     def send_message(self, text: str, *, reply_to: Optional[str] = None) -> str:
@@ -183,7 +201,7 @@ class ChatApp(App):
         )
         self._add_message(msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg.id)
+            self._record_reply(reply_to, msg.id)
         self.on_message_sent(msg)
         return msg.id
 
@@ -230,13 +248,19 @@ class ChatApp(App):
             # Off the app thread: marshal the UI update onto the main loop.
             self.call_from_thread(self._add_message, msg)
         if reply_to is not None:
-            self._replies.setdefault(reply_to, []).append(msg.id)
+            self._record_reply(reply_to, msg.id)
         self.on_message_received(msg)
         return msg.id
 
     def get_replies(self, msg_id: str) -> List[str]:
         """Returns the ids of the messages that reply to *msg_id*."""
-        return list(self._replies.get(msg_id, []))
+        with self._replies_lock:
+            return list(self._replies.get(msg_id, []))
+
+    def _record_reply(self, reply_to: str, msg_id: str) -> None:
+        """Thread-safely records that *msg_id* replies to *reply_to*."""
+        with self._replies_lock:
+            self._replies.setdefault(reply_to, []).append(msg_id)
 
     # === Hooks (callbacks — all start with ``on_``) ==============================
 
@@ -389,6 +413,65 @@ class ChatApp(App):
         self._clear_reply_target()
         return self.send_message(text, reply_to=target)
 
+    # === Command suggestions (autocomplete) ========================================
+
+    def has_command_suggestions(self) -> bool:
+        """Whether the command-suggestion popup currently has entries."""
+        return self.query_one("#command-suggestions", OptionList).option_count > 0
+
+    def _update_command_suggestions(self, text: str) -> None:
+        """Shows commands matching the "/token" currently being typed."""
+        matches: List[str] = []
+        if text.startswith(COMMAND_PREFIX) and " " not in text:
+            token = text[len(COMMAND_PREFIX):]
+            matches = sorted(name for name in self._commands if name.startswith(token))
+
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        if not matches:
+            self._hide_command_suggestions()
+            return
+
+        suggestions.set_options(
+            Option(
+                f"{COMMAND_PREFIX}{name}  —  {self._commands[name]}"
+                if self._commands[name]
+                else f"{COMMAND_PREFIX}{name}",
+                id=name,
+            )
+            for name in matches
+        )
+        suggestions.highlighted = 0
+        suggestions.add_class("-visible")
+
+    def _hide_command_suggestions(self) -> None:
+        """Hides and clears the command-suggestion popup."""
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        suggestions.remove_class("-visible")
+        suggestions.clear_options()
+
+    def _move_command_suggestion(self, delta: int) -> None:
+        """Moves the suggestion highlight up (delta<0) or down (delta>0)."""
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        if delta > 0:
+            suggestions.action_cursor_down()
+        else:
+            suggestions.action_cursor_up()
+
+    def _accept_command_suggestion(self) -> bool:
+        """Completes the input with the highlighted suggestion, if any.
+
+        Returns True if a suggestion was accepted.
+        """
+        suggestions = self.query_one("#command-suggestions", OptionList)
+        option = suggestions.highlighted_option
+        if option is None or option.id is None:
+            return False
+        inp = self.query_one("#input-line", Input)
+        inp.value = f"{COMMAND_PREFIX}{option.id} "
+        inp.action_end()
+        self._hide_command_suggestions()
+        return True
+
     def _find_message(self, msg_id: str) -> Optional[ChatMessage]:
         """Returns the message with the given id, or None."""
         return self._msg_index.get(msg_id)
@@ -397,6 +480,45 @@ class ChatApp(App):
         """Scrolls the chat log to the bottom."""
         chat_log = self.query_one("#chat-log", ScrollableContainer)
         chat_log.scroll_end(animate=False)
+
+
+class _CommandInput(Input):
+    """Input that drives the command-suggestion popup owned by :class:`ChatApp`.
+
+    Tab/Down/Up/Escape are only claimed while a suggestion popup is open
+    (see ``check_action``) — otherwise they fall through to Textual's
+    normal bindings (e.g. Tab still moves focus as usual).
+    """
+
+    BINDINGS = [
+        Binding("tab", "accept_suggestion", show=False),
+        Binding("down", "next_suggestion", show=False),
+        Binding("up", "prev_suggestion", show=False),
+        Binding("escape", "dismiss_suggestions", show=False),
+    ]
+
+    def check_action(self, action: str, parameters: Tuple[object, ...]) -> Optional[bool]:
+        if action in ("accept_suggestion", "next_suggestion", "prev_suggestion", "dismiss_suggestions"):
+            return cast(ChatApp, self.app).has_command_suggestions()
+        return True
+
+    def action_accept_suggestion(self) -> None:
+        cast(ChatApp, self.app)._accept_command_suggestion()
+
+    def action_next_suggestion(self) -> None:
+        cast(ChatApp, self.app)._move_command_suggestion(1)
+
+    def action_prev_suggestion(self) -> None:
+        cast(ChatApp, self.app)._move_command_suggestion(-1)
+
+    def action_dismiss_suggestions(self) -> None:
+        cast(ChatApp, self.app)._hide_command_suggestions()
+
+    async def action_submit(self) -> None:
+        app = cast(ChatApp, self.app)
+        if app.has_command_suggestions() and app._accept_command_suggestion():
+            return
+        await super().action_submit()
 
 
 if __name__ == "__main__":
