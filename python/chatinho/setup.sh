@@ -9,12 +9,6 @@ cd "$(cd "$(dirname "$0")" && pwd)"
 
 echo "🐍 chatinho setup — preparing virtual environment..."
 
-# Already ready? Skip (does not require uv).
-if [ -x .venv/bin/python ] && .venv/bin/python -c "import textual" 2>/dev/null; then
-    echo "✅ .venv already ready — skipping"
-    exit 0
-fi
-
 # Locate uv: PATH or common locations (includes $PREFIX for Termux).
 find_uv() {
     local cand
@@ -63,11 +57,15 @@ if [ -z "$UV" ]; then
     echo "✅ uv installed at: $UV"
 fi
 
+# Create .venv if it doesn't exist
 if [ ! -d .venv ]; then
     "$UV" venv
     echo "✅ .venv created"
+else
+    echo "🔄 .venv exists — updating dependencies..."
 fi
 
-echo "📦 Installing all dependencies..."
+# Always sync dependencies (installs new ones, updates changed ones, removes unused)
+echo "📦 Installing/updating all dependencies..."
 "$UV" sync
 echo "✅ Setup complete — run: ./run.sh  (or .venv/bin/python demo.py)"
