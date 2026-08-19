@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relógio Digital - Mcking Codespace</title>
+  <style>
+    body {
+      font: 16px/1.5 system-ui;
+      background: #0f0f13;
+      color: #e0e0ee;
+      display: flex;
+      height: 100vh;
+      margin: 0;
+      align-items: center;
+      justify-content: center;
+    }
+    #clock {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 48px;
+      letter-spacing: 2px;
+      background: #1a1a24;
+      padding: 20px 40px;
+      border-radius: 15px;
+      border: 1px solid #2e2e4a;
+      box-shadow: 0 0 20px rgba(108, 92, 231, 0.3);
+    }
+    #date {
+      margin-top: 10px;
+      font-size: 24px;
+      letter-spacing: 1px;
+      opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <div id="clock">--:--:--</div>
+    <div id="date">--/--/----</div>
+  </div>
+
+  <script>
+    function updateClock() {
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('pt-PT', { hour12: false });
+      const dateString = now.toLocaleDateString('pt-PT', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      document.getElementById('clock').textContent = timeString;
+      document.getElementById('date').textContent = dateString;
+    }
+
+    // Update immediately and then every second
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>
